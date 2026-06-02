@@ -1,0 +1,126 @@
+"""
+cli.py -- entry point. Pipeline:
+
+    detect format  ->  ingest to DataFrame  ->  TRIAGE (gate)  ->  correct  ->  report
+
+Triage runs before correction every time. If the engine isn't running well
+enough to tune (no-crank / cranking / stall / hunting idle), we stop there and
+print the targeted "fix this first" recommendations instead of a bogus VE table.
+
+    python -m tuneassist.cli LOG.csv [--platform auto|gm|holley] [--out-dir DIR]
+"""
+from __future__ import annotations
+import argparse, os, sys
+
+import pandas as pd
+
+from .engine_gm import (Config, load_log, resolve_columns, normalize_map_to_kpa,
+                        analyze, write_report)
+from .triage import triage, TriageResult
+from . import holley
+
+
+def detect_platform(path: str) -> str:
+    head = ""
+    try:
+        head = open(path, encoding="latin-1").read(4000).lower()
+    except Exception:
+        pass
+    if "hp tuners" in head or "vcm" in head:
+        return "gm"
+    if "holley" in head or "terminator" in head or "sniper" in head or "tslcd" in head:
+        return "holley"
+    # fall back on channel names
+    if "target afr" in head or "cl comp" in head:
+        return "holley"
+    return "gm"
+
+
+def run(path: str, platform: str = "auto", out_dir: str = "./out") -> None:
+    if platform == "auto":
+        platform = detect_platform(path)
+    cfg = Config()
+
+    # --- ingest ---
+    if platform == "holley":
+        df = holley.load_holley_csv(path)
+        col = holley.resolve_holley(df)
+    else:
+        df, units = load_log(path)
+        for c in df.columns:
+            conv = pd.to_numeric(df[c], errors="coerce")
+            if conv.notna().mean() > 0.5:
+                df[c] = conv
+        col = resolve_columns(df)
+        normalize_map_to_kpa(df, col, units, [])
+
+    # --- triage gate (same for both platforms) ---
+    tcol = {k: col[k] for k in ("rpm", "time", "tps", "map") if k in col}
+    tr = triage(df, tcol)
+    print("=" * 70)
+    print(f"PLATFORM: {platform.upper()}   |   TRIAGE: {tr.state}")
+    print("=" * 70)
+    print(tr.detail, "\n")
+    for rec in tr.recommendations:
+        print("  - " + rec)
+    print()
+    if not tr.can_correct:
+        print("Stopping before correction: get the engine to a tunable state first.")
+        return
+
+    # --- correct ---
+    os.makedirs(out_dir, exist_ok=True)
+    if platform == "holley":
+        corr, counts, disagree, notes = holley.analyze_holley(df, cfg)
+        for n in notes:
+            print(n)
+        if not corr.empty:
+            corr.to_csv(os.path.join(out_dir, "holley_base_fuel_correction.csv"))
+            print(f"\nWrote base-fuel correction grid to {out_dir}/holley_base_fuel_correction.csv")
+    else:
+        res = analyze(df, cfg)
+        report = write_report(res, out_dir)
+        print(report)
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(description="AI-assisted tuning analyzer (GM/HPTuners + Holley).")
+    p.add_argument("log", nargs="?", help="log CSV; omit to start the guided session")
+    p.add_argument("--platform", choices=["auto", "gm", "holley"], default="auto")
+    p.add_argument("--out-dir", default="./out")
+    p.add_argument("--batch", action="store_true",
+                   help="non-interactive: print the plain report and exit")
+    p.add_argument("--tui", action="store_true",
+                   help="launch the full Textual UI (mouse + keyboard)")
+    p.add_argument("--json", action="store_true",
+                   help="headless: print the structured analysis as JSON and exit")
+    p.add_argument("--airflow", choices=["ve_sd", "maf", "no_maf"], default="ve_sd",
+                   help="airflow strategy for --json runs (default ve_sd)")
+    p.add_argument("--spark", action="store_true", help="include spark analysis in --json")
+    args = p.parse_args(argv)
+
+    if args.tui:
+        from .tui import run_tui
+        run_tui()
+        return
+
+    if args.json and args.log:
+        import json
+        from .core import SessionOpts, analyze_log
+        from .engine_gm import Config
+        plat = None if args.platform == "auto" else args.platform
+        opts = SessionOpts(cfg=Config(), airflow_mode=args.airflow, tune_spark=args.spark)
+        cr = analyze_log(args.log, opts, platform=plat, out_dir=None)
+        print(json.dumps(cr.to_dict(), indent=2))
+        return
+
+    if args.batch and args.log:
+        run(args.log, args.platform, args.out_dir)
+        return
+    # Default: the beautiful, guided, multi-pass session (wizard.py).
+    from .wizard import run_session
+    run_session(initial_log=args.log, out_dir=args.out_dir)
+
+
+if __name__ == "__main__":
+    main()

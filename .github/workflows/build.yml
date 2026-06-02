@@ -1,0 +1,70 @@
+name: build
+
+# Runs tests on every push/PR, and builds single-file binaries for
+# Windows / macOS / Linux. On a version tag (v*) the binaries are attached to a
+# GitHub Release so non-technical users can just download one file and run it.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Run test suite
+        run: |
+          for t in tests/test_*.py; do python "$t"; done
+
+  binaries:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: tuneassist-linux-x64
+            binname: tuneassist
+          - os: windows-latest
+            artifact: tuneassist-windows-x64
+            binname: tuneassist.exe
+          - os: macos-latest
+            artifact: tuneassist-macos-arm64
+            binname: tuneassist
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[build]"
+      - name: Build single-file binary
+        run: pyinstaller --onefile --name tuneassist --noconfirm --paths . --collect-all textual packaging/entry.py
+      - name: Smoke-test the binary (headless JSON)
+        shell: bash
+        run: ./dist/${{ matrix.binname }} tests/fixtures/ride42.csv --json > out.json && python -c "import json;d=json.load(open('out.json'));assert d['stage']=='TUNE_VE_SD',d['stage'];print('binary OK')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.binname }}
+
+  release:
+    needs: binaries
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Attach binaries to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*

@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+*.egg
+
+# PyInstaller build artifacts
+dist/
+build_pyi/
+*.spec
+
+# Test/run output
+out/
+tune_out/
+.pytest_cache/
+
+# Local garage (per-machine vehicle memory)
+.tuneassist/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Claude Code local settings
+.claude/
