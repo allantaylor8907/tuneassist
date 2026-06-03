@@ -12,10 +12,14 @@ Run:  python -m tuneassist.cli --tui     (or the `tuneassist-tui` console script
 
 from __future__ import annotations
 import datetime
+import os
+import subprocess
+import sys
 
 import pandas as pd
 from rich.text import Text
 
+from textual import work
 from textual.app import App, ComposeResult
 from textual.screen import Screen, ModalScreen
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -34,6 +38,43 @@ AIRFLOWS = [("MAF disabled - tuning VE (SD)", "ve_sd"),
             ("MAF enabled / blended", "maf"),
             ("No MAF (pure speed-density)", "no_maf"),
             ("Tuning the MAF curve now", "maf")]
+
+
+def _native_pick_file() -> str | None:
+    """Open the OS-native 'open file' dialog and return the chosen path (or None).
+    Runs as a subprocess so it never conflicts with Textual's event loop. Falls
+    back gracefully (returns None) if no native picker is available -- the user
+    can still type a path or use the in-app browser."""
+    try:
+        if sys.platform.startswith("win"):
+            ps = (
+                'Add-Type -AssemblyName System.Windows.Forms | Out-Null; '
+                '$f = New-Object System.Windows.Forms.OpenFileDialog; '
+                '$f.Title = "Select a log CSV"; '
+                '$f.Filter = "Logs (*.csv;*.hpl;*.dl)|*.csv;*.hpl;*.dl|All files (*.*)|*.*"; '
+                'if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) '
+                '{ [Console]::Out.Write($f.FileName) }')
+            out = subprocess.run(
+                ["powershell", "-NoProfile", "-STA", "-Command", ps],
+                capture_output=True, text=True, timeout=300)
+            return out.stdout.strip() or None
+        if sys.platform == "darwin":
+            script = ('POSIX path of (choose file with prompt "Select a log CSV")')
+            out = subprocess.run(["osascript", "-e", script],
+                                 capture_output=True, text=True, timeout=300)
+            return out.stdout.strip() or None
+        # Linux / other: try zenity, then kdialog.
+        for cmd in (["zenity", "--file-selection", "--title=Select a log CSV"],
+                    ["kdialog", "--getopenfilename"]):
+            try:
+                out = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                if out.returncode == 0 and out.stdout.strip():
+                    return out.stdout.strip()
+            except FileNotFoundError:
+                continue
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
 
 
 def _setup_summary(platform, opts) -> str:
@@ -96,17 +137,19 @@ class ConfirmDialog(ModalScreen[bool]):
 # Garage screen
 # --------------------------------------------------------------------------
 class GarageScreen(Screen):
-    BINDINGS = [("n", "new", "New"), ("r", "rename", "Rename"),
-                ("d", "delete", "Delete"), ("q", "app.quit", "Quit")]
+    BINDINGS = [("s", "quick", "Quick scan"), ("n", "new", "New"),
+                ("r", "rename", "Rename"), ("d", "delete", "Delete"),
+                ("q", "app.quit", "Quit")]
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield Static(panels.build_banner(), id="banner")
-        yield Label("Your garage — pick a vehicle, or press [b]n[/b] for a new one:",
-                    id="garage-help")
+        yield Label("Your garage — pick a vehicle, press [b]s[/b] for a quick scan, "
+                    "or [b]n[/b] for a new one:", id="garage-help")
         yield DataTable(id="vehicles", cursor_type="row", zebra_stripes=True)
         with Horizontal(id="garage-buttons"):
             yield Button("Open", variant="primary", id="open")
+            yield Button("Quick scan (no save)", id="quick")
             yield Button("New vehicle", variant="success", id="new")
             yield Button("Rename", id="rename")
             yield Button("Delete", variant="error", id="delete")
@@ -136,8 +179,12 @@ class GarageScreen(Screen):
         return self._names[dt.cursor_row]
 
     def on_button_pressed(self, e: Button.Pressed):
-        {"open": self._open, "new": self.action_new,
+        {"open": self._open, "quick": self.action_quick, "new": self.action_new,
          "rename": self.action_rename, "delete": self.action_delete}[e.button.id]()
+
+    def action_quick(self):
+        """Bypass the garage: an ephemeral, unsaved session for a quick look."""
+        self.app.push_screen(SetupScreen(ephemeral=True))
 
     def on_data_table_row_selected(self, _):
         self._open()
@@ -188,12 +235,20 @@ class GarageScreen(Screen):
 class SetupScreen(Screen):
     BINDINGS = [("escape", "app.pop_screen", "Back")]
 
+    def __init__(self, ephemeral: bool = False):
+        super().__init__()
+        self.ephemeral = ephemeral
+
     def compose(self) -> ComposeResult:
         yield Header()
         with VerticalScroll(id="setup"):
-            yield Label("[b]New vehicle setup[/b]  (asked once — remembered for next time)")
-            yield Label("Name"); yield Input(placeholder="e.g. 5.3 iron truck", id="name")
-            yield Label("Nickname (optional)"); yield Input(placeholder="e.g. Goldie", id="nick")
+            if self.ephemeral:
+                yield Label("[b]Quick scan[/b]  (one-off — not saved to the garage)")
+            else:
+                yield Label("[b]New vehicle setup[/b]  (asked once — remembered for next time)")
+            if not self.ephemeral:
+                yield Label("Name"); yield Input(placeholder="e.g. 5.3 iron truck", id="name")
+                yield Label("Nickname (optional)"); yield Input(placeholder="e.g. Goldie", id="nick")
             yield Label("Platform")
             yield Select([("GM / HPTuners", "gm"), ("Holley EFI", "holley")],
                          value="gm", allow_blank=False, id="platform")
@@ -223,7 +278,8 @@ class SetupScreen(Screen):
                               ("nitrous", "nitrous")], value="na",
                              allow_blank=False, id="adder")
             with Horizontal(id="setup-buttons"):
-                yield Button("Save & continue", variant="primary", id="save")
+                yield Button("Scan" if self.ephemeral else "Save & continue",
+                             variant="primary", id="save")
                 yield Button("Cancel", id="cancel")
         yield Footer()
 
@@ -238,10 +294,14 @@ class SetupScreen(Screen):
         if e.button.id == "cancel":
             self.app.pop_screen()
             return
-        name = self.query_one("#name", Input).value.strip()
-        if not name:
-            self.notify("Give the vehicle a name to save it.", severity="warning")
-            return
+        if self.ephemeral:
+            name = nick = None                          # unsaved one-off
+        else:
+            name = self.query_one("#name", Input).value.strip()
+            if not name:
+                self.notify("Give the vehicle a name to save it.", severity="warning")
+                return
+            nick = self.query_one("#nick", Input).value.strip() or None
         cfg = Config()
         cfg.stoich = FUELS[self.query_one("#fuel", Select).value][1]
         platform = self.query_one("#platform", Select).value
@@ -261,9 +321,9 @@ class SetupScreen(Screen):
             opts.profile = EngineProfile(
                 block=block, compression=cr, displacement=self._f("disp"),
                 power_adder=self.query_one("#adder", Select).value)
-        nick = self.query_one("#nick", Input).value.strip() or None
         self.app.load_vehicle(name, nick, platform, opts, [])
-        self.app._persist_setup()
+        if not self.ephemeral:
+            self.app._persist_setup()
         self.app.pop_screen()                      # drop setup
         self.app.push_screen(AnalyzeScreen())
 
@@ -273,7 +333,7 @@ class SetupScreen(Screen):
 # --------------------------------------------------------------------------
 class AnalyzeScreen(Screen):
     BINDINGS = [("g", "garage", "Garage"), ("a", "focus_path", "Analyze a log"),
-                ("q", "app.quit", "Quit")]
+                ("ctrl+o", "pick_file", "Open file…"), ("q", "app.quit", "Quit")]
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -281,9 +341,12 @@ class AnalyzeScreen(Screen):
         yield Static(panels.build_journey_bar(""), id="journey")
         with Horizontal(id="pathrow"):
             yield Input(placeholder="path to your exported log CSV…", id="path")
+            yield Button("Browse…", id="pick")
             yield Button("Analyze", variant="primary", id="analyze")
-        with Collapsible(title="Browse for a file", id="browser"):
-            yield DirectoryTree(".", id="tree")
+        with Collapsible(title="…or browse in-app", id="browser", collapsed=True):
+            yield Input(value=os.path.expanduser("~"), id="treeroot",
+                        placeholder="folder to browse (Enter to go there)")
+            yield DirectoryTree(os.path.expanduser("~"), id="tree")
         with TabbedContent(id="tabs"):
             with TabPane("Report", id="tab-report"):
                 yield VerticalScroll(Static(self._welcome(), id="results"))
@@ -323,12 +386,39 @@ class AnalyzeScreen(Screen):
         self.query_one("#path", Input).value = str(e.path)
         self.query_one("#browser", Collapsible).collapsed = True
 
-    def on_input_submitted(self, _):
-        self._analyze()
+    def on_input_submitted(self, e: Input.Submitted):
+        if e.input.id == "treeroot":
+            self._reroot_tree(e.value)
+        else:
+            self._analyze()
+
+    def _reroot_tree(self, folder: str):
+        folder = os.path.expanduser(folder.strip().strip('"'))
+        if not os.path.isdir(folder):
+            self.notify("Not a folder.", severity="warning")
+            return
+        tree = self.query_one("#tree", DirectoryTree)
+        tree.path = folder            # DirectoryTree re-roots and reloads
 
     def on_button_pressed(self, e: Button.Pressed):
         if e.button.id == "analyze":
             self._analyze()
+        elif e.button.id == "pick":
+            self.action_pick_file()
+
+    def action_pick_file(self):
+        """Open the OS-native file picker (so you can browse anywhere)."""
+        self._pick_file_worker()
+
+    @work(thread=True, exclusive=True)
+    def _pick_file_worker(self):
+        path = _native_pick_file()
+        if path:
+            self.app.call_from_thread(self._set_path, path)
+
+    def _set_path(self, path: str):
+        self.query_one("#path", Input).value = path
+        self.notify(f"Selected {os.path.basename(path)}")
 
     def _analyze(self):
         path = self.query_one("#path", Input).value.strip().strip('"')

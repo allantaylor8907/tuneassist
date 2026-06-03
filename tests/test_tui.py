@@ -113,6 +113,51 @@ def test_grid_and_cells_tables_populate_and_sort():
     asyncio.run(go())
 
 
+def test_quick_scan_bypasses_garage_and_does_not_save():
+    async def go():
+        with tempfile.TemporaryDirectory() as d:
+            gp = os.path.join(d, "g.json")
+            app = TuneAssistApp(garage_path=gp)
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                _press(app.screen, "quick")            # GarageScreen -> ephemeral Setup
+                await pilot.pause()
+                assert isinstance(app.screen, SetupScreen) and app.screen.ephemeral
+                _press(app.screen, "save")             # no name needed -> AnalyzeScreen
+                await pilot.pause()
+                assert isinstance(app.screen, AnalyzeScreen)
+                assert app.vehicle is None             # ephemeral: nothing loaded to save
+                app.screen.query_one("#path", Input).value = RIDE
+                _press(app.screen, "analyze")
+                await pilot.pause()
+            # the garage file must be empty -- a quick scan saves nothing
+            assert garage.list_vehicles(garage.load(gp)) == []
+    asyncio.run(go())
+
+
+def test_directory_tree_can_reroot_outside_project():
+    async def go():
+        with tempfile.TemporaryDirectory() as d:
+            from textual.widgets import DirectoryTree
+            app = TuneAssistApp(garage_path=os.path.join(d, "g.json"))
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                _press(app.screen, "quick"); await pilot.pause()
+                _press(app.screen, "save"); await pilot.pause()
+                screen = app.screen
+                screen._reroot_tree(d)                 # browse an arbitrary folder
+                await pilot.pause()
+                assert str(screen.query_one("#tree", DirectoryTree).path) == d
+    asyncio.run(go())
+
+
+def test_native_picker_helper_is_callable():
+    # don't actually open a dialog; just confirm the helper exists and is safe to
+    # reference (it would be invoked in a worker thread at runtime).
+    from tuneassist.tui import _native_pick_file
+    assert callable(_native_pick_file)
+
+
 def test_build_report_renders_without_error():
     from rich.console import Console
     cr = analyze_log(RIDE, SessionOpts(cfg=Config(), tune_spark=True))
