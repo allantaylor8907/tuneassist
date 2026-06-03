@@ -87,6 +87,9 @@ CHANNEL_PATTERNS = {
     "torque":      [r"engine.*torque", r"\btorque\b", r"\btq\b"],
     "injpw":       [r"inj.*pulse.*width", r"inj.*pw\b", r"\bipw\b"],
     "duty":        [r"inj.*duty", r"duty.*cycle", r"\bidc\b"],
+    "baro":        [r"barometric", r"\bbaro\b"],
+    "fuelpres":    [r"fuel.*rail.*pres", r"fuel.*pres", r"\bfp\b(?!.*set)"],
+    "boost":       [r"boost"],
 }
 
 

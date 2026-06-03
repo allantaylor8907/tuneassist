@@ -158,6 +158,26 @@ def test_native_picker_helper_is_callable():
     assert callable(_native_pick_file)
 
 
+def test_theme_defaults_and_cycles_and_persists():
+    async def go():
+        with tempfile.TemporaryDirectory() as d:
+            gp = os.path.join(d, "g.json")
+            app = TuneAssistApp(garage_path=gp)
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                assert app.theme == "gruvbox"          # default
+                app.action_cycle_theme()
+                await pilot.pause()
+                assert app.theme == "nord"             # cycled
+            assert garage.load(gp).get("theme") == "nord"   # persisted
+            # a second launch restores it
+            app2 = TuneAssistApp(garage_path=gp)
+            async with app2.run_test() as pilot:
+                await pilot.pause()
+                assert app2.theme == "nord"
+    asyncio.run(go())
+
+
 def test_build_report_renders_without_error():
     from rich.console import Console
     cr = analyze_log(RIDE, SessionOpts(cfg=Config(), tune_spark=True))

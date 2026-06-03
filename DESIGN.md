@@ -242,6 +242,29 @@ tune quality), `opportunity` (free power / refinement), `info`.
   injectors undersized or fuel pressure dropping → out of fuel up top. Bigger
   injectors / pump / regulator before leaning anything at WOT.
 
+### Forced induction (turbo / supercharger)
+Boost is detected from MAP exceeding baro (so these only fire on a boosted log,
+or when the engine profile says boost). Boost cells are **open-loop and
+unforgiving** — fuel and timing margin matter most here.
+- **Lean under boost** (AFR > `boost_lean_afr`, ~11.9): the fastest way to melt a
+  piston. Boosted NA-block engines want ~11.0–11.8. Causes: fuel system out of
+  headroom (injectors/pump/pressure), boost AFR target too lean, fuel pressure
+  not rising with boost. → richen the boost target and confirm the fuel system
+  can deliver before adding boost.
+- **Fuel pressure dropping under load**: base fuel pressure should hold, or rise
+  1:1 with boost (boost-referenced regulator). A drop from idle→boost means the
+  pump/lines/regulator can't keep up — and a pressure drop *causes* the lean-out.
+- **MAP sensor can't read boost**: profile says boost but MAP never clears ~1 bar
+  — a stock 1-bar sensor is blind above atmospheric. → fit/scale a 2- or 3-bar
+  sensor so the tune can see boost at all.
+- **Closed-loop fueling under boost**: trims still active under boost means PE /
+  open-loop hands off too late; CL can lean a rich PE target back out. → drop out
+  of closed loop before boost.
+- **Hot charge under boost** (IAT > `boost_iat_hot`): weak/heat-soaked intercooler
+  — steals power and invites knock. → improve charge cooling; lean on IAT retard.
+Spark under boost is far more conservative than NA (§10: ~10–18°, less with more
+boost; pull timing as boost/IAT rise).
+
 ### Squeezing power (opportunity findings)
 - **WOT richer than needed**: measured WOT AFR well rich of a safe NA target
   (~12.5–12.8 pump, ~11.8–12.2 boost) leaves power on the table → lean the PE

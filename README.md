@@ -35,7 +35,11 @@ binaries don't carry channel names and aren't parsed — see DESIGN.md §1).
 
 A mouse-and-keyboard terminal app: a **garage** of your vehicles (pick, create,
 rename, delete), a setup form, and an analysis screen where you point it at a log
-and get the journey bar, color heatmaps, spark grid, and the "next step" card.
+and get the journey bar, color heatmaps, an interactive correction grid, the
+spark grid, a plain-language **diagnosis** panel, and the "next step" card.
+Press **Ctrl+T** to cycle themes (gruvbox, nord, tokyo-night, …) — remembered
+per machine. **Quick scan** skips the garage for a one-off look; **Browse…**
+opens the native file picker.
 
 ### Guided session (classic Rich wizard)
     python -m tuneassist.cli                 # asks for a log, walks you through

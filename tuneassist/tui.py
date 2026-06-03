@@ -572,7 +572,9 @@ class TuneAssistApp(App):
     #dialog-buttons Button { margin: 0 1; }
     ModalScreen { align: center middle; }
     """
-    BINDINGS = [("ctrl+c", "quit", "Quit")]
+    BINDINGS = [("ctrl+c", "quit", "Quit"), ("ctrl+t", "cycle_theme", "Theme")]
+    THEMES = ["gruvbox", "nord", "tokyo-night", "catppuccin-mocha",
+              "textual-dark", "textual-light"]
 
     def __init__(self, garage_path: str | None = None):
         super().__init__()
@@ -585,7 +587,18 @@ class TuneAssistApp(App):
         self.history: list = []
 
     def on_mount(self):
+        # remembered theme (per-machine), default gruvbox
+        saved = self.data.get("theme")
+        self.theme = saved if saved in self.THEMES else "gruvbox"
         self.push_screen(GarageScreen())
+
+    def action_cycle_theme(self):
+        cur = self.theme if self.theme in self.THEMES else self.THEMES[0]
+        nxt = self.THEMES[(self.THEMES.index(cur) + 1) % len(self.THEMES)]
+        self.theme = nxt
+        self.data["theme"] = nxt
+        self._save()
+        self.notify(f"Theme: {nxt}", timeout=1.5)
 
     def load_vehicle(self, vehicle, nickname, platform, opts, history):
         self.vehicle, self.nickname = vehicle, nickname

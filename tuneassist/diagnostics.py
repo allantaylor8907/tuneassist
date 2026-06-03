@@ -34,6 +34,12 @@ class DiagnosticConfig:
     knock_deg: float = 1.0        # sustained retard above this = real knock
     iat_hot: float = 140.0        # F
     ect_hot: float = 235.0        # F
+    # --- forced induction (turbo / supercharger) ---
+    boost_map: float = 105.0      # kPa above (baro) this = under boost
+    boost_lean_afr: float = 11.9  # under boost, leaner than this = danger
+    boost_iat_hot: float = 150.0  # F: post-compressor charge heat under boost
+    fp_drop: float = 8.0          # psi fuel-pressure drop under load = supply limit
+    cl_in_boost: float = 1.5      # |trim|% under boost above this = closed-loop-in-boost
 
 
 @dataclass
@@ -376,6 +382,116 @@ def _d_trim_oscillation(df, col, cfg, dc, warm):
     return None
 
 
+def _boost_findings(df, col, cfg, dc, warm, profile):
+    """Forced-induction detectors. Boost is detected from MAP exceeding baro, so
+    these light up only on a boosted log (or when the engine profile says boost)."""
+    out = []
+    mapk = _num(df, col, "map")
+    if mapk is None:
+        return out
+    baro = _num(df, col, "baro")
+    baro_kpa = float(baro[warm].median()) if baro is not None and baro[warm].notna().any() else 101.3
+    peak_map = float(mapk[warm].quantile(0.999)) if warm.any() else float(mapk.max())
+    boosted_log = peak_map > dc.boost_map + 3
+    adder = getattr(profile, "power_adder", "na") if profile else "na"
+    expects_boost = adder == "boost"
+
+    def psi(kpa):
+        return (kpa - baro_kpa) / 6.89476
+
+    boost = warm & (mapk > dc.boost_map)
+
+    # MAP sensor can't see boost: profile says boost but MAP never clears ~1 bar.
+    if expects_boost and not boosted_log:
+        tps = _num(df, col, "tps")
+        hi = warm & (tps > 80) if tps is not None else warm
+        if hi.any() and float(mapk[hi].max()) < dc.boost_map + 6:
+            out.append(Finding(
+                "MAP_SENSOR_RANGE", "warning", "MAP sensor can't read your boost",
+                f"You set a boosted engine but MAP never exceeds ~{int(peak_map)} kPa "
+                "(about 1 bar) at full throttle - a 1-bar sensor is blind above "
+                "atmospheric.",
+                ["stock 1-bar MAP sensor on a boosted engine"],
+                ["Fit a 2-bar (to ~15 psi) or 3-bar (to ~30 psi) MAP sensor and "
+                 "re-scale it, so the tune can actually see boost."], "medium"))
+        return out
+
+    if not boosted_log:
+        return out
+
+    out.append(Finding(
+        "FORCED_INDUCTION", "info", "Boost detected",
+        f"Peak manifold pressure ~{int(peak_map)} kPa (~{psi(peak_map):.1f} psi of "
+        "boost). Boost cells are open-loop and unforgiving - fuel and timing margins "
+        "matter most here.",
+        [], [], "high"))
+
+    # Lean under boost = the fastest way to melt a piston.
+    act = _num(df, col, "afr_actual")
+    if act is not None:
+        a = act[boost].dropna()
+        if len(a) >= 8:
+            afr = float(a.median())
+            if afr > dc.boost_lean_afr:
+                causes = ["fuel system out of headroom (injectors / pump / pressure)",
+                          "boost AFR target too lean", "fuel pressure not rising with boost"]
+                duty = _duty(df, col)
+                if duty is not None and float(duty[boost].dropna().quantile(0.95) or 0) > dc.inj_duty_max:
+                    causes.insert(0, "injector duty maxed under boost")
+                out.append(Finding(
+                    "BOOST_LEAN", "critical", "Lean under boost",
+                    f"Under boost the AFR is ~{afr:.1f} - dangerously lean for "
+                    "forced induction (want ~11.0-11.8).",
+                    causes,
+                    ["Richen the boost AFR target to ~11.5 and confirm the fuel system "
+                     "can deliver it.", "Do not make more boost until it's safe."], "high"))
+
+    # Fuel pressure should hold (or rise 1:1 with boost); a drop means supply limit.
+    fp = _num(df, col, "fuelpres")
+    if fp is not None:
+        base = fp[warm & (mapk < 60)].dropna()
+        load = fp[boost].dropna()
+        if len(base) > 10 and len(load) > 8:
+            drop = float(base.median() - load.median())
+            if drop > dc.fp_drop:
+                out.append(Finding(
+                    "FUEL_PRESSURE_DROP", "critical", "Fuel pressure dropping under load",
+                    f"Fuel pressure falls ~{drop:.0f} psi from idle to boost - the "
+                    "supply can't keep up (it should hold, or rise with boost).",
+                    ["pump / line / filter undersized", "regulator not boost-referenced",
+                     "failing pump"],
+                    ["Fix fuel supply before more boost; lean-out under boost follows a "
+                     "pressure drop.", "Use a boost-referenced (1:1) regulator if not already."],
+                    "high"))
+
+    # Closed-loop fueling under boost is risky (it can lean a rich PE target out).
+    trim = _total_trim(df, col)
+    if trim is not None:
+        t = trim[boost].dropna()
+        if len(t) > 8 and abs(float(t.mean())) > dc.cl_in_boost:
+            out.append(Finding(
+                "CL_IN_BOOST", "warning", "Closed-loop fueling under boost",
+                f"Fuel trims are still active under boost (mean {float(t.mean()):+.1f}%). "
+                "Power enrichment should run OPEN loop.",
+                ["closed-loop / PE disable point set too high"],
+                ["Make sure closed loop drops out before boost (lower the PE/open-loop "
+                 "enable point)."], "medium"))
+
+    # Charge-heat under boost (weak/heat-soaked intercooler).
+    iat = _num(df, col, "iat")
+    if iat is not None:
+        i = iat[boost].dropna()
+        if len(i) > 8 and float(i.median()) > dc.boost_iat_hot:
+            out.append(Finding(
+                "BOOST_IAT", "warning", "Hot charge temps under boost",
+                f"Intake-air temp under boost medians ~{float(i.median()):.0f}F - the "
+                "charge is hot, which steals power and invites knock.",
+                ["intercooler too small or heat-soaked", "no intercooler / air-to-water pump off"],
+                ["Improve charge cooling; add IAT-based timing retard as a safety net."],
+                "medium"))
+    return out
+
+
 _DETECTORS = [_d_cruise_trim, _d_idle_vacuum_leak, _d_bank_imbalance,
               _d_wb_vs_commanded, _d_wot_fueling, _d_injector_duty, _d_knock,
               _d_temps, _d_trim_oscillation]
@@ -389,7 +505,7 @@ _PLATFORM_SKIP = {"holley": {"WB_VS_NB"}}
 
 
 def diagnose(df: pd.DataFrame, col: dict, cfg, dc: DiagnosticConfig | None = None,
-             platform: str = "gm") -> list:
+             platform: str = "gm", profile=None) -> list:
     """Run all detectors and return Findings sorted by severity then confidence."""
     dc = dc or DiagnosticConfig()
     warm = _warm_mask(df, col, getattr(cfg, "ect_min_f", 160.0))
@@ -405,6 +521,10 @@ def diagnose(df: pd.DataFrame, col: dict, cfg, dc: DiagnosticConfig | None = Non
         for f in (r if isinstance(r, list) else [r]):
             if f.id not in skip:
                 findings.append(f)
+    try:
+        findings.extend(_boost_findings(df, col, cfg, dc, warm, profile))
+    except Exception:        # pragma: no cover - defensive
+        pass
     conf_rank = {"high": 0, "medium": 1, "low": 2}
     findings.sort(key=lambda f: (SEVERITY_RANK.get(f.severity, 9),
                                  conf_rank.get(f.confidence, 9)))

@@ -133,6 +133,56 @@ def test_trim_oscillation():
     assert "TRIM_OSCILLATION" in _ids(_diag(df))
 
 
+def _boosted(afr_boost=11.5, fp_boost=58.0, iat_boost=110.0, n=1500):
+    rpm = np.clip(3000 + 1800 * np.sin(np.arange(n) / 30), 900, 6500)
+    mapk = np.clip(60 + 90 * np.sin(np.arange(n) / 24), 25, 180)
+    b = mapk > 105
+    return pd.DataFrame({
+        "Engine RPM": rpm, "MAP": mapk, "Throttle Position": np.clip(mapk - 20, 0, 100),
+        "Coolant Temp": np.full(n, 195.0), "Intake Air Temp": np.where(b, iat_boost, 95.0),
+        "Wideband AFR": np.where(b, afr_boost, 14.5), "Baro": np.full(n, 101.0),
+        "Fuel Pres": np.where(b, fp_boost, 58.0)})
+
+
+def _diag_boost(df, profile=None):
+    from tuneassist.profile import EngineProfile
+    return diagnose(df, resolve_columns(df), Config(),
+                    profile=profile or EngineProfile(power_adder="boost"))
+
+
+def test_forced_induction_detected():
+    assert "FORCED_INDUCTION" in _ids(_diag_boost(_boosted()))
+
+
+def test_boost_lean_is_critical():
+    f = [x for x in _diag_boost(_boosted(afr_boost=12.6)) if x.id == "BOOST_LEAN"]
+    assert f and f[0].severity == "critical"
+
+
+def test_fuel_pressure_drop_under_boost():
+    f = [x for x in _diag_boost(_boosted(fp_boost=40.0)) if x.id == "FUEL_PRESSURE_DROP"]
+    assert f and f[0].severity == "critical"
+
+
+def test_boost_iat_warns():
+    assert "BOOST_IAT" in _ids(_diag_boost(_boosted(iat_boost=165.0)))
+
+
+def test_map_sensor_cant_read_boost():
+    # profile says boost, but MAP never clears ~1 bar -> 1-bar sensor blind
+    n = 600
+    df = pd.DataFrame({"Engine RPM": np.full(n, 5000.0), "MAP": np.full(n, 102.0),
+                       "Throttle Position": np.full(n, 95.0), "Coolant Temp": np.full(n, 195.0)})
+    assert "MAP_SENSOR_RANGE" in _ids(_diag_boost(df))
+
+
+def test_na_log_has_no_boost_findings():
+    df = _base(mapk=95.0)        # never above ~1 bar
+    df["Wideband AFR"] = 13.0
+    ids = _ids(_diag(df))
+    assert "FORCED_INDUCTION" not in ids and "BOOST_LEAN" not in ids
+
+
 def test_clean_log_has_no_critical_findings():
     df = _base()
     df["Short Term Fuel Trim Bank 1"] = 1.0

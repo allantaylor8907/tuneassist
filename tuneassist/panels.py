@@ -57,12 +57,27 @@ def _pct_style(change_pct: float) -> str:
     return "bright_cyan" if a < 3 else ("blue" if a < 6 else "bold blue")
 
 
+# ASCII wordmark (figlet "small", ASCII-only so it can't crash legacy consoles).
+_LOGO = [
+    ' _____ _   _ _  _ ___     _   ___ ___ ___ ___ _____',
+    '|_   _| | | | \\| | __|   /_\\ / __/ __|_ _/ __|_   _|',
+    '  | | | |_| | .` | _|   / _ \\\\__ \\__ \\| |\\__ \\ | |',
+    '  |_|  \\___/|_|\\_|___| /_/ \\_\\___/___/___|___/ |_|',
+]
+# A piston/tach motif to the right of the wordmark would misalign on narrow
+# terminals, so we keep the logo a clean centered wordmark.
+
+
 def build_banner():
-    title = Text("  TUNE ASSIST  ", style="bold white on dark_blue")
-    sub = Text("AI-assisted, recommendation-only engine tuning  -  "
-               "it advises, you apply.", style="italic grey70")
-    return Panel(Align.center(Group(Align.center(title), Align.center(sub))),
-                 box=box.DOUBLE, border_style="blue", padding=(1, 2))
+    art = Text()
+    for i, line in enumerate(_LOGO):
+        # subtle vertical gradient blue -> cyan
+        shade = ["#5e81ac", "#81a1c1", "#88c0d0", "#8fbcbb"][i % 4]
+        art.append(line + "\n", style=f"bold {shade}")
+    sub = Text("AI-assisted, recommendation-only engine tuning   "
+               "it advises, you apply.", style="italic grey66")
+    return Panel(Align.center(Group(Align.center(art), Align.center(sub))),
+                 box=box.HEAVY, border_style="#81a1c1", padding=(1, 2))
 
 
 def build_journey_bar(current_stage: str):
@@ -259,28 +274,43 @@ SEVERITY_STYLE = {"critical": ("bold red", "[!]"), "warning": ("yellow", "[!]"),
 
 
 def build_diagnostics(findings):
-    """A ranked symptom→cause→correction panel from diagnostics.Finding list."""
+    """A ranked, easy-to-scan symptom -> cause -> fix panel from Findings."""
     if not findings:
         return None
-    blocks = []
+    # summary header: counts by severity
+    from collections import Counter
+    counts = Counter(f.severity for f in findings)
+    order = [("critical", "bold red"), ("warning", "yellow"),
+             ("opportunity", "bright_green"), ("info", "grey70")]
+    summary = Text("  ")
+    chips = [(f"{counts[s]} {s}", clr) for s, clr in order if counts.get(s)]
+    for i, (txt, clr) in enumerate(chips):
+        if i:
+            summary.append("   ")
+        summary.append(txt, style=clr)
+
+    blocks = [summary, Text("")]
     for f in findings:
-        style, mark = SEVERITY_STYLE.get(f.severity, ("white", "•"))
+        style, mark = SEVERITY_STYLE.get(f.severity, ("white", "[ ]"))
         head = Text()
         head.append(f"{mark} ", style=style)
         head.append(f.title, style=f"bold {style}")
-        head.append(f"   [{f.severity}·{f.confidence}]", style="grey50")
-        lines = [head, Text(f"   {f.detail}", style="white")]
+        lines = [head]
+        lines.append(Text("    What I see:  ", style="bold grey62") +
+                     Text(f.detail, style="grey85"))
         if f.causes:
-            lines.append(Text("   likely: ", style="grey62") +
+            lines.append(Text("    Likely:     ", style="bold grey62") +
                          Text("; ".join(f.causes), style="grey74"))
-        for c in f.corrections:
-            lines.append(Text.from_markup(f"   [bold {style}]>[/] {c}"))
+        for j, c in enumerate(f.corrections):
+            label = "    Do this:    " if j == 0 else "                "
+            lines.append(Text(label, style="bold grey62") +
+                         Text.from_markup(f"[{style}]>[/] {c}"))
         blocks.append(Group(*lines))
         blocks.append(Text(""))
     if blocks and isinstance(blocks[-1], Text):
         blocks.pop()
     return Panel(Group(*blocks), box=box.ROUNDED, border_style="cyan",
-                 title="[bold]DIAGNOSIS — what I see & what to change[/]",
+                 title="[bold]DIAGNOSIS -- what I see & what to change[/]",
                  title_align="left", padding=(1, 1))
 
 

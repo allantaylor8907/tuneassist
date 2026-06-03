@@ -44,10 +44,12 @@ tunable state.
   channel; PULLs on knock (+margin), cautious opt-in ADDs for power; flags LEAN/HOT
   root causes. Tested.
 - `diagnostics.py` — **pattern-based symptom→cause→correction engine** (DESIGN
-  §12). `diagnose(df, col, cfg) → [Finding]`: lean/rich cruise, vacuum leak, bank
-  imbalance, WB-vs-NB, WOT lean (critical) / rich (opportunity), injector duty,
-  knock, temps, trim oscillation. Each detector degrades if channels absent;
-  findings ranked critical→info. Strings are ASCII (safe for `--json`). Tested.
+  §12). `diagnose(df, col, cfg, platform, profile) → [Finding]`: lean/rich cruise,
+  vacuum leak, bank imbalance, WB-vs-NB (GM-only), WOT shortfall/lean/rich,
+  injector duty, knock, temps, trim oscillation, and a **forced-induction** set
+  (boost-lean, fuel-pressure-drop, MAP-sensor-range, CL-in-boost, boost-IAT).
+  Detectors degrade if channels absent; findings ranked critical→info and shown
+  as a readable "What I see / Likely / Do this" panel. ASCII-safe. Tested.
 - `cams.py` — optional cam specs → conservative idle/timing starting points
   (DESIGN §11). Classify stock/mild/big; starting-point guidance only. Tested.
 - `profile.py` — optional engine profile (block material, compression, power
@@ -117,9 +119,10 @@ and the **Textual UI** (`tui.py`) shipped — garage/setup/analyze screens reusi
 `panels.*`. Decision settled: stay Python + ship binaries; revisit a Rust+Polars
 port only if PyInstaller binaries prove unacceptable for end users.
 Remaining:
-0. Textual UI polish: a DataTable view of the correction grid (sortable/clickable
-   cells) instead of a Rich heatmap in a Static; live file-watch to auto-analyze a
-   new log; `textual serve` web demo. The flow + screens are done and tested.
+0. DONE — DataTable grid (interactive + sortable), quick-scan bypass, native
+   file picker / browse-anywhere, Textual themes (Ctrl+T, gruvbox/nord/…,
+   persisted), ASCII-art logo banner. Remaining TUI polish: live file-watch to
+   auto-analyze a new log; `textual serve` web demo.
 1. DONE — Holley validated on a real Terminator X CSV (`tests/fixtures/
    holley_sample.csv`, `tests/test_holley.py`). Fixed: latin-1 + units-row in the
    loader, `MAP`/`TPS` vs `… RoC`, time=`RTC`, knock pattern, Holley-correct

@@ -56,6 +56,9 @@ HOLLEY_PATTERNS = {
     "knock":     [r"knock retard", r"\bknock\b(?!.*level)"],
     "injpw":     [r"inj.*pw", r"pulse.?width", r"\bpw\b"],
     "duty":      [r"duty"],
+    "baro":      [r"\bbaro\b", r"barometric"],
+    "fuelpres":  [r"fuel.*pres"],
+    "boost":     [r"boost"],
 }
 
 
