@@ -225,7 +225,7 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
             if canon not in dcol and alias in col:
                 dcol[canon] = col[alias]
         try:
-            findings = diagnostics.diagnose(df, dcol, cfg)
+            findings = diagnostics.diagnose(df, dcol, cfg, platform=platform)
         except Exception as e:   # pragma: no cover - defensive
             notes.append(f"Diagnostics skipped: {e}")
 

@@ -120,11 +120,12 @@ Remaining:
 0. Textual UI polish: a DataTable view of the correction grid (sortable/clickable
    cells) instead of a Rich heatmap in a Static; live file-watch to auto-analyze a
    new log; `textual serve` web demo. The flow + screens are done and tested.
-1. Build the Holley test fixtures (need a real Holley CSV export; the sample we
-   have is a `.dl` and can't be parsed — ask the user to export CSV). The Holley
-   path runs via the `_HolleyResult` adapter (now in `core`) but is **untested**
-   on real data. Spark on Holley uses GM channel patterns; verify against a real
-   Holley CSV (different timing/knock channel labels).
+1. DONE — Holley validated on a real Terminator X CSV (`tests/fixtures/
+   holley_sample.csv`, `tests/test_holley.py`). Fixed: latin-1 + units-row in the
+   loader, `MAP`/`TPS` vs `… RoC`, time=`RTC`, knock pattern, Holley-correct
+   diagnosis (no narrowband finding; lean-but-on-target WOT → power opportunity)
+   and base-fuel prescription language. Remaining Holley: Sniper/Dominator label
+   variants, and spark on Holley still borrows GM patterns (works on this file).
 2. `prescribe("TUNE_MAF", …)` text reads as a VE→MAF transition even when the user
    is already in MAF mode with residual cruise error — reword to be mode-neutral.
 3. LT (Gen 5, DI) airflow model + Holley LT — deferred, different airflow model.

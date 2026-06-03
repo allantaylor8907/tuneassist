@@ -258,6 +258,24 @@ def prescribe(stage: str, summary: AnalysisSummary, triage_recs: list,
         )
 
     if stage == "TUNE_VE_SD":
+        if not gm:        # Holley: self-learning base fuel, no VE/MAF/SD phases
+            actions = [
+                "Bake the learned correction into the BASE FUEL table: the grid is "
+                "what CL-comp + Learn already had to add/remove to hit target.",
+                "Then reset/clear the Learn table so it starts fresh from the new base.",
+            ]
+            if summary.focus:
+                actions.append(f"Biggest error is in {summary.focus}.")
+            return Prescription(
+                stage, "Dial in base fuel",
+                f"The ECU has been self-correcting (median {summary.median_pct:+.1f}%). "
+                "Fold that into the base fuel table so it isn't leaning on Learn, then "
+                "re-log to confirm CL-comp and Learn stay near zero.",
+                actions=actions,
+                drive="Re-drive a similar mix (idle, cruise, a couple pulls) after baking "
+                      "in the change and clearing Learn.",
+                capture=["RPM", "MAP", "AFR", "Target AFR", "CL Comp", "Learn",
+                         "Inj PW", "Duty Cycle", "CTS", "MAT", "Knock Retard"])
         off = summary.offset or {}
         actions = []
         if gm and airflow_mode == "ve_sd":

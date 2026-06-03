@@ -35,18 +35,25 @@ import pandas as pd
 
 # Holley CSV channel labels vary a little across Sniper / Terminator X / HP /
 # Dominator and firmware versions; matched fuzzily like the GM side.
+# NOTE on ordering: patterns are tried in order and the FIRST matching column
+# (in file order) wins, so exact "^map$"/"^tps$" come first -- otherwise the
+# rate-of-change columns ("MAP RoC", "TPS RoC", which appear earlier in a
+# Terminator X export) would shadow the real channel.
 HOLLEY_PATTERNS = {
-    "time":      [r"^time", r"elapsed", r"^sec"],
-    "rpm":       [r"\brpm\b", r"engine speed"],
-    "map":       [r"\bmap\b", r"manifold", r"\bkpa\b"],
-    "tps":       [r"\btps\b", r"throttle"],
-    "afr_actual":[r"afr left", r"afr right", r"afr average", r"^afr\b", r"wideband", r"\bwbo2\b"],
+    "time":      [r"^time", r"\brtc\b", r"elapsed", r"^sec"],
+    "rpm":       [r"^rpm$", r"\brpm\b", r"engine speed"],
+    "map":       [r"^map$", r"manifold", r"\bmap\b(?!.*roc)", r"\bkpa\b"],
+    "tps":       [r"^tps$", r"\btps\b(?!.*roc)", r"throttle"],
+    "afr_actual":[r"afr left", r"afr right", r"afr average", r"^afr$", r"^afr\b",
+                  r"wideband", r"\bwbo2\b"],
     "afr_target":[r"target afr", r"afr target", r"tgt afr"],
     "cl_comp":   [r"cl comp", r"closed.?loop comp", r"clc\b"],
-    "learn":     [r"\blearn\b", r"self.?tune", r"base fuel learn"],
-    "cts":       [r"\bcts\b", r"coolant"],
-    "mat":       [r"\bmat\b", r"air temp", r"\biat\b"],
-    "ign":       [r"ign(ition)? timing", r"spark", r"timing"],
+    "learn":     [r"current learn", r"\blearn\b(?!.*status)", r"self.?tune",
+                  r"base fuel learn"],
+    "cts":       [r"\bcts\b", r"coolant temp", r"coolant"],
+    "mat":       [r"\bmat\b", r"\biat\b", r"air temp(?!.*enr)", r"charge temp"],
+    "ign":       [r"ign(ition)? timing", r"timing", r"spark"],
+    "knock":     [r"knock retard", r"\bknock\b(?!.*level)"],
     "injpw":     [r"inj.*pw", r"pulse.?width", r"\bpw\b"],
     "duty":      [r"duty"],
 }
@@ -54,7 +61,7 @@ HOLLEY_PATTERNS = {
 
 def resolve_holley(df: pd.DataFrame) -> dict:
     resolved, cols = {}, list(df.columns)
-    low = {c: c.lower() for c in cols}
+    low = {c: str(c).lower() for c in cols}
     for canon, pats in HOLLEY_PATTERNS.items():
         for p in pats:
             hit = next((c for c in cols if re.search(p, low[c])), None)
@@ -65,15 +72,21 @@ def resolve_holley(df: pd.DataFrame) -> dict:
 
 
 def load_holley_csv(path: str) -> pd.DataFrame:
-    """Holley EFI CSV export. Some versions prepend a couple of metadata lines;
-    sniff for the row that actually contains RPM as the header."""
+    """Holley EFI CSV export (Terminator X / Sniper / HP / Dominator). The export
+    has a channel-name row, then a UNITS row (e.g. '[RPM],[kPa],[°F]'), then data.
+    Some firmwares prepend metadata lines, so we sniff for the names row, skip the
+    units row, and read latin-1 (the units row carries a degree sign)."""
     raw = open(path, encoding="latin-1").read().splitlines()
     hdr = 0
     for i, line in enumerate(raw[:20]):
         if re.search(r"\brpm\b", line, re.I) and line.count(",") >= 3:
             hdr = i
             break
-    df = pd.read_csv(path, skiprows=hdr, engine="python", on_bad_lines="skip")
+    # The row right after the names is a units row if it's bracketed/non-numeric.
+    skip = [hdr + 1] if (hdr + 1 < len(raw) and "[" in raw[hdr + 1]) else None
+    df = pd.read_csv(path, header=hdr, skiprows=skip, encoding="latin-1",
+                     engine="python", on_bad_lines="skip")
+    df = df.loc[:, [c for c in df.columns if not str(c).startswith("Unnamed")]]
     for c in df.columns:
         conv = pd.to_numeric(df[c], errors="coerce")
         if conv.notna().mean() > 0.5:

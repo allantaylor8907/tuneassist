@@ -80,6 +80,9 @@ mean per cell to kill outliers/glitches.
 - `ride42` CSV (AEM wideband): median ~−0.8%, scattered ±3-6%, well-sorted tune.
 - `jr42` CSV: REJECTED — engine never warmed (max coolant 111 °F).
 - `protuner12` CSV: REJECTED — spark/diag log, no RPM/fuel channels.
+- `holley_sample` CSV (Terminator X): RUNNING_DRIVE; Learn-based base-fuel
+  correction ~−18% (ECU had learned ~−20%); WOT actual≈commanded 13.2 → a power
+  *opportunity* (richen toward 12.6), NOT a false lean; no narrowband finding.
 
 ## 9. The GM Gen 3/4 airflow model, and the VE-then-MAF order of operations
 A Gen 3/4 LS PCM estimates cylinder airmass two ways and blends them:

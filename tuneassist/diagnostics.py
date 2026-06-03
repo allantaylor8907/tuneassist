@@ -196,7 +196,7 @@ def _d_wb_vs_commanded(df, col, cfg, dc, warm):
     a = act[cl].dropna()
     if len(a) < 30:
         return None
-    dev = float((a.mean() / cmd[cl].dropna().mean() - 1.0) * 100)
+    dev = float((a.median() / cmd[cl].dropna().median() - 1.0) * 100)
     if abs(dev) > dc.o2_suspect:
         return Finding("WB_VS_NB", "warning", "Wideband disagrees with target",
                        f"At stoich the wideband reads {dev:+.1f}% off commanded - "
@@ -221,11 +221,53 @@ def _d_wot_fueling(df, col, cfg, dc, warm):
         return None
     afr = float(a.median())
     cmd = _num(df, col, "afr_cmd")
+    cmdmed = float(cmd[wot].dropna().median()) if cmd is not None else None
     duty = _duty(df, col)
     duty_hi = duty is not None and float(duty[wot].dropna().quantile(0.95) or 0) > dc.inj_duty_max
 
-    if afr > dc.wot_lean_afr:                     # genuinely lean -> danger
-        causes = ["airflow under-read at high load (raise VE/MAF up top)",
+    if cmdmed is not None:
+        # Hitting target? Then it's working -- only flag a real shortfall, a risky
+        # *target*, or a power opportunity. Don't cry "lean" when AFR == commanded.
+        if afr - cmdmed > 0.4:                    # measured leaner than asked = real
+            causes = ["fuel system out of headroom (injector duty / pressure)",
+                      "airflow / fuel model under-reads at high load"]
+            if duty_hi:
+                causes.insert(0, "injector duty maxed - running out of injector")
+            sev = "critical" if afr > 13.3 else "warning"
+            return Finding("WOT_SHORTFALL", sev, "WOT leaner than commanded",
+                           f"Commanded ~{cmdmed:.1f} but measured ~{afr:.1f} at WOT.",
+                           causes,
+                           ["Verify fuel pressure holds and injector duty has headroom.",
+                            "Add fuel up top until it meets the target; stop pulls if it's lean."],
+                           "high")
+        if cmdmed >= 13.7:                        # the target itself is lean for WOT
+            return Finding("WOT_TARGET_RISK", "warning", "WOT target is lean",
+                           f"WOT is commanding ~{cmdmed:.1f} - lean for sustained load.",
+                           ["a conservative/economy WOT AFR target"],
+                           ["Richen the WOT target toward ~12.8 for safety margin and power."],
+                           "medium")
+        if 12.9 <= cmdmed < 13.7:                 # safe but leaving power on the table
+            return Finding("WOT_TARGET_LEAN", "opportunity", "Richer WOT could make power",
+                           f"WOT target ~{cmdmed:.1f}; ~{dc.wot_target_afr:.1f} usually "
+                           "makes peak power on pump and adds knock margin.",
+                           ["WOT AFR target set on the lean side"],
+                           [f"Try richening the WOT target toward ~{dc.wot_target_afr:.1f}, "
+                            "watch the wideband and knock.",
+                            "Re-log; keep whatever makes the most power without knock."],
+                           "medium")
+        if afr < dc.wot_rich_afr and cmdmed < dc.wot_rich_afr:
+            return Finding("WOT_RICH", "opportunity", "WOT richer than needed",
+                           f"WOT AFR ~{afr:.1f}; ~{dc.wot_target_afr:.1f} usually makes "
+                           "more power and burns cooler.",
+                           ["PE target set conservatively rich"],
+                           [f"Lean the WOT target toward ~{dc.wot_target_afr:.1f} in steps, "
+                            "watching knock.", "Re-log each step; back off if knock appears."],
+                           "medium")
+        return None
+
+    # No commanded channel: judge on absolute AFR.
+    if afr > dc.wot_lean_afr:
+        causes = ["airflow / fuel under-read at high load",
                   "fuel system out of headroom (injector duty / pressure)"]
         if duty_hi:
             causes.insert(0, "injector duty maxed - running out of injector")
@@ -236,25 +278,14 @@ def _d_wot_fueling(df, col, cfg, dc, warm):
                        ["Add fuel at WOT immediately; target ~12.5-12.8 on pump.",
                         "Check fuel pressure under load and injector duty.",
                         "Stop WOT pulls until it's safe."], "high")
-    if cmd is not None:
-        c = float(cmd[wot].dropna().median())
-        if afr - c > 0.5:
-            return Finding("WOT_SHORTFALL", "warning", "WOT not hitting target",
-                           f"Commanded ~{c:.1f} but measured ~{afr:.1f} at WOT "
-                           "(leaner than asked).",
-                           ["fuel system can't keep up (duty/pressure)",
-                            "MAF/VE under-read at high airflow"],
-                           ["Verify injector duty and fuel pressure hold under load.",
-                            "Correct the high-load airflow so commanded is met."],
-                           "medium")
-    if afr < dc.wot_rich_afr:                     # safe but leaving power on the table
+    if afr < dc.wot_rich_afr:
         return Finding("WOT_RICH", "opportunity", "WOT richer than needed",
                        f"WOT AFR is ~{afr:.1f}; ~{dc.wot_target_afr:.1f} usually makes "
                        "more power on pump and runs cooler-burning.",
-                       ["PE (power-enrichment) target set conservatively rich"],
+                       ["PE target set conservatively rich"],
                        [f"Lean the WOT target toward ~{dc.wot_target_afr:.1f} in steps, "
-                        "watching knock and the wideband.",
-                        "Re-log each step; back off if knock appears."], "medium")
+                        "watching knock.", "Re-log each step; back off if knock appears."],
+                       "medium")
     return None
 
 
@@ -350,10 +381,19 @@ _DETECTORS = [_d_cruise_trim, _d_idle_vacuum_leak, _d_bank_imbalance,
               _d_temps, _d_trim_oscillation]
 
 
-def diagnose(df: pd.DataFrame, col: dict, cfg, dc: DiagnosticConfig | None = None) -> list:
+# Detectors that only make sense on the GM/HPTuners model (the wideband is
+# external and the ECM controls fuel via a narrowband). On Holley the wideband
+# IS the control sensor, so a wideband-vs-target gap is just un-converged Learn,
+# already captured by the base-fuel correction grid.
+_PLATFORM_SKIP = {"holley": {"WB_VS_NB"}}
+
+
+def diagnose(df: pd.DataFrame, col: dict, cfg, dc: DiagnosticConfig | None = None,
+             platform: str = "gm") -> list:
     """Run all detectors and return Findings sorted by severity then confidence."""
     dc = dc or DiagnosticConfig()
     warm = _warm_mask(df, col, getattr(cfg, "ect_min_f", 160.0))
+    skip = _PLATFORM_SKIP.get(platform, set())
     findings = []
     for det in _DETECTORS:
         try:
@@ -362,7 +402,9 @@ def diagnose(df: pd.DataFrame, col: dict, cfg, dc: DiagnosticConfig | None = Non
             continue
         if r is None:
             continue
-        findings.extend(r if isinstance(r, list) else [r])
+        for f in (r if isinstance(r, list) else [r]):
+            if f.id not in skip:
+                findings.append(f)
     conf_rank = {"high": 0, "medium": 1, "low": 2}
     findings.sort(key=lambda f: (SEVERITY_RANK.get(f.severity, 9),
                                  conf_rank.get(f.confidence, 9)))

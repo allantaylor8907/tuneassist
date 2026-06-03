@@ -66,12 +66,31 @@ def test_wideband_vs_commanded():
     assert "WB_VS_NB" in _ids(_diag(df))
 
 
-def test_wot_lean_is_critical():
+def test_wot_shortfall_is_critical():
+    # commanded 12.6 but measured 13.6 -> fuel system isn't delivering (shortfall)
     df = _base(mapk=95.0, tps=98.0)
     df["Wideband AFR"] = 13.6
     df["Air-Fuel Ratio Commanded"] = 12.6
+    f = [x for x in _diag(df) if x.id == "WOT_SHORTFALL"]
+    assert f and f[0].severity == "critical"
+
+
+def test_wot_lean_no_command_is_critical():
+    # no commanded channel, absolute lean at WOT -> critical
+    df = _base(mapk=95.0, tps=98.0)
+    df["Wideband AFR"] = 13.7
     f = [x for x in _diag(df) if x.id == "WOT_LEAN"]
     assert f and f[0].severity == "critical"
+
+
+def test_wot_hitting_lean_target_is_opportunity_not_lean():
+    # measured == commanded at a lean-ish target -> power opportunity, not 'lean'
+    df = _base(mapk=95.0, tps=98.0)
+    df["Wideband AFR"] = 13.2
+    df["Air-Fuel Ratio Commanded"] = 13.2
+    ids = {f.id for f in _diag(df)}
+    assert "WOT_TARGET_LEAN" in ids and "WOT_LEAN" not in ids
+    assert not [f for f in _diag(df) if f.severity == "critical"]
 
 
 def test_wot_rich_is_opportunity():
