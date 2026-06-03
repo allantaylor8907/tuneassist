@@ -68,6 +68,35 @@ def test_apply_finding_states_where_for_holley():
     assert f and "base fuel" in " ".join(f[0].corrections).lower()
 
 
+def test_safety_finding_says_grid_resolves_it():
+    cr = analyze_log(os.path.join(FIX, "ride42.csv"), _opts())
+    wot = [f for f in cr.findings if f.id in ("WOT_SHORTFALL", "WOT_LEAN")]
+    assert wot
+    joined = " ".join(wot[0].corrections).lower()
+    assert "already covers" in joined or "richen" in joined
+
+
+def test_safety_finding_flags_hardware_limit():
+    # WOT lean WITH injector duty maxed -> the VE change can't fix it
+    import numpy as np, pandas as pd
+    from tuneassist.core import _annotate_safety_resolution
+    from tuneassist.diagnostics import diagnose
+    from tuneassist.engine_gm import resolve_columns
+    n = 600
+    df = pd.DataFrame({"Engine RPM": np.full(n, 6000.0),
+                       "Intake Manifold Absolute Pressure": np.full(n, 98.0),
+                       "Throttle Position": np.full(n, 98.0), "Coolant Temp": np.full(n, 195.0),
+                       "Wideband AFR": np.full(n, 13.6), "Air-Fuel Ratio Commanded": np.full(n, 12.6),
+                       "Injector Pulse Width Avg": np.full(n, 20.0)})
+    fs = diagnose(df, resolve_columns(df), Config())
+
+    class _S:
+        wot_covered = True
+    _annotate_safety_resolution(fs, _S(), "gm", "ve_sd")
+    wot = [f for f in fs if f.id in ("WOT_SHORTFALL", "WOT_LEAN")]
+    assert wot and any("won't be fixed" in c.lower() for c in wot[0].corrections)
+
+
 def test_cold_log_reports_blocker_not_grid():
     d = analyze_log(os.path.join(FIX, "jr42.csv"), _opts()).to_dict()
     assert d.get("empty_reason") and "operating temp" in d["empty_reason"]

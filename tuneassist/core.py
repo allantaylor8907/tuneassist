@@ -158,6 +158,31 @@ def _primary_change_finding(summary, platform: str, airflow_mode: str):
                    f"(mostly {focus}).", [], corrections, "high")
 
 
+def _annotate_safety_resolution(findings, summary, platform: str, airflow_mode: str):
+    """Append a line to each fuel-safety finding stating whether applying the
+    recommended fuel/VE correction resolves it, or -- if it can't (a hardware
+    limit) -- what actually needs to change."""
+    ids = {f.id for f in findings}
+    hardware_limited = bool(ids & {"INJ_DUTY", "FUEL_PRESSURE_DROP"})
+    grid = ("base fuel table" if platform == "holley"
+            else "MAF curve" if airflow_mode == "maf" else "VE/fuel correction")
+    for f in findings:
+        if f.id not in ("WOT_SHORTFALL", "WOT_LEAN", "BOOST_LEAN"):
+            continue
+        if hardware_limited:
+            f.corrections.append(
+                f"WON'T be fixed by the {grid}: you're out of injector/fuel-pressure "
+                "headroom (see the fuel-supply finding) -- fix that hardware first.")
+        elif getattr(summary, "wot_covered", False):
+            f.corrections.append(
+                f"The {grid} below already covers these high-load cells (from the "
+                "wideband) -- applying it should richen them; re-log to confirm it's safe.")
+        else:
+            f.corrections.append(
+                "Not covered by the correction grid (no wideband data up here) -- "
+                "richen the WOT commanded-AFR / power-enrichment target directly, then re-log.")
+
+
 def _blocked_prescription(reason: str, cfg: Config, platform: str):
     """Tailored next-step when the log ran but yielded no usable cells."""
     reason = reason.replace("RESULT: ", "")
@@ -272,6 +297,9 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
             cr_ = {"high": 0, "medium": 1, "low": 2}
             findings = [primary] + findings
             findings.sort(key=lambda f: (rank.get(f.severity, 9), cr_.get(f.confidence, 9)))
+        # Tell the user whether the recommended fuel/VE change resolves each
+        # safety finding -- or, if it can't, what actually needs to change.
+        _annotate_safety_resolution(findings, summary, platform, opts.airflow_mode)
 
     spark_has_work = bool(spark and spark.can_run and
                           (spark.knock_cells or (spark.action is not None and
