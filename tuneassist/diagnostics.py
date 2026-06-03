@@ -42,6 +42,18 @@ class DiagnosticConfig:
     boost_iat_hot: float = 150.0  # F: post-compressor charge heat under boost
     fp_drop: float = 8.0          # psi fuel-pressure drop under load = supply limit
     cl_in_boost: float = 1.5      # |trim|% under boost above this = closed-loop-in-boost
+    # --- cold start / warmup ---
+    warmup_rich_afr: float = 12.0   # warmup AFR richer than this = loading up
+    warmup_lean_afr: float = 15.5   # warmup AFR leaner than this = cold stumble/stall
+    thermostat_min_f: float = 170.0 # should exceed this on a long drive
+    warmup_min_duration_s: float = 240.0  # only judge "never warmed" over a long log
+    ase_warm_pct: float = 2.0       # afterstart/warmup enrichment still active when warm
+    # --- idle quality ---
+    idle_hunt_std: float = 75.0     # idle RPM std above this = hunting/surging
+    idle_rpm_tol: float = 150.0     # actual vs target idle RPM gap that matters
+    idle_afr_rich: float = 13.2     # idle AFR richer than this = over-rich idle
+    idle_afr_lean: float = 15.3     # idle AFR leaner than this = lean idle
+    idle_timing_std: float = 4.0    # idle spark swing (deg) above this = fighting itself
 
 
 @dataclass
@@ -553,6 +565,188 @@ def _boost_findings(df, col, cfg, dc, warm, profile):
     return out
 
 
+def _coldstart_findings(df, col, cfg, dc):
+    """Cold-start / warmup analysis. Runs on the FULL log (not warm-masked) since
+    the point is the cold portion. Degrades to nothing if the log is warm-only."""
+    out = []
+    ect = _num(df, col, "ect")
+    rpm = _num(df, col, "rpm")
+    if ect is None or rpm is None:
+        return out
+    warm_temp = getattr(cfg, "ect_min_f", 160.0)
+    running = rpm > 500
+    cold_run = running & (ect < warm_temp) & (ect > 90)   # warming, not stone-cold crank
+
+    # Never reached operating temp over a long log -> stuck/missing thermostat.
+    t = _num(df, col, "time")
+    dur = float(t.max() - t.min()) if t is not None and t.notna().any() else 0.0
+    ect_max = float(ect[running].max()) if running.any() else float(ect.max())
+    if dur > dc.warmup_min_duration_s and ect_max < dc.thermostat_min_f and ect_max > 110:
+        out.append(Finding(
+            "THERMOSTAT", "warning", "Engine never reached operating temp",
+            f"Over ~{dur/60:.0f} min coolant only reached ~{ect_max:.0f}F "
+            f"(want >{dc.thermostat_min_f:.0f}). A stuck-open or missing thermostat is "
+            "the usual cause - and cruise/VE data while cold isn't valid to tune on.",
+            ["stuck-open or missing thermostat", "wrong/!low-temp thermostat",
+             "gauge/sensor reading low"],
+            ["Fit a proper thermostat and confirm it reaches temp before tuning.",
+             "Re-log once it holds operating temperature."], "medium"))
+
+    # Warmup AFR (wideband) -- too rich loads up/fouls; too lean stumbles/stalls.
+    afr = _num(df, col, "afr_actual")
+    if afr is not None and int(cold_run.sum()) > 30:
+        a = afr[cold_run].dropna()
+        if len(a) > 20:
+            med = float(a.median())
+            if med < dc.warmup_rich_afr:
+                out.append(Finding(
+                    "WARMUP_RICH", "warning", "Warmup is over-rich",
+                    f"While warming up the AFR medians ~{med:.1f} - rich enough to foul "
+                    "plugs, wash cylinders, and load up.",
+                    ["coolant/afterstart enrichment too high or decaying too slowly"],
+                    ["Trim the warmup (coolant) enrichment down; taper it out sooner.",
+                     "Re-log a cold start and watch AFR climb toward stoich as it warms."],
+                    "medium"))
+            elif med > dc.warmup_lean_afr:
+                out.append(Finding(
+                    "WARMUP_LEAN", "warning", "Warmup is lean",
+                    f"While warming up the AFR medians ~{med:.1f} - lean enough to "
+                    "stumble, hesitate, or stall cold.",
+                    ["not enough coolant/afterstart enrichment when cold"],
+                    ["Add warmup (coolant) enrichment so cold AFR sits richer (~13-13.5).",
+                     "Re-log a cold start to confirm it drives off cleanly."], "medium"))
+
+    # Enrichment still active when fully warm. Two conventions: "% added" where
+    # 0 = none, or a multiplier where 100% = neutral (Holley). Detect the neutral
+    # baseline so we don't flag a settled 100% as "still enriching".
+    warm = running & (ect >= warm_temp)
+    for key, label in (("ase", "afterstart"), ("warmup_enr", "warmup/coolant")):
+        enr = _num(df, col, key)
+        if enr is None:
+            continue
+        ew = enr[warm].dropna()
+        full = enr.dropna()
+        if len(ew) <= 20 or len(full) < 30:
+            continue
+        neutral = 100.0 if float(full.median()) > 50 else 0.0
+        margin = 8.0 if neutral == 100.0 else dc.ase_warm_pct
+        warm_val = float(ew.median())
+        over = warm_val - neutral
+        if over > margin:
+            disp = f"~{warm_val:.0f}% (neutral is {neutral:.0f}%)"
+            out.append(Finding(
+                "ENRICH_NOT_DECAYED", "warning",
+                f"{label.title()} enrichment still active when warm",
+                f"{label.title()} enrichment is still {disp} with the engine warm - "
+                "it should have tapered back to neutral.",
+                [f"{label} enrichment-vs-temp curve doesn't decay by operating temp"],
+                [f"Taper the {label} enrichment to neutral by operating temp so warm "
+                 "fueling is just the base/learned table."], "high"))
+            break   # report one; they overlap
+    return out
+
+
+def _idle_findings(df, col, cfg, dc, warm):
+    """Warm idle quality: hunting, off-target RPM, idle AFR, IAC authority,
+    idle-timing fighting. Uses warm idle samples only."""
+    out = []
+    rpm = _num(df, col, "rpm")
+    if rpm is None:
+        return out
+    idle = warm & (rpm > 500) & (rpm < 1300)
+    tps = _num(df, col, "tps")
+    if tps is not None:
+        idle &= tps < 8
+    ridle = rpm[idle].dropna()
+    if len(ridle) < 40:
+        return out
+    idle_rpm = float(ridle.median())
+
+    # Hunting / surging
+    std = float(ridle.std())
+    if std > dc.idle_hunt_std:
+        out.append(Finding(
+            "IDLE_HUNT", "warning", "Idle is hunting / surging",
+            f"Idle RPM swings a lot (std {std:.0f} rpm around ~{idle_rpm:.0f}).",
+            ["vacuum leak (lean hunt)", "IAC range / min-air off",
+             "idle spark-vs-RPM correction too aggressive", "loading up rich"],
+            ["Steady the idle before fueling: set idle airflow target and IAC range.",
+             "Smoke-test for leaks; soften idle spark correction while dialing in."],
+            "medium"))
+
+    # Actual vs target idle RPM
+    tgt = _num(df, col, "idle_target")
+    if tgt is not None:
+        tv = tgt[idle].dropna()
+        if len(tv) > 20:
+            target = float(tv.median())
+            gap = idle_rpm - target
+            if gap > dc.idle_rpm_tol:
+                out.append(Finding(
+                    "IDLE_HIGH", "warning", "Idle higher than target",
+                    f"Idle sits ~{idle_rpm:.0f} vs a target of ~{target:.0f} rpm "
+                    f"(+{gap:.0f}).",
+                    ["vacuum leak / extra unmetered air", "throttle blade stop set too high",
+                     "IAC commanded closed but can't pull it down"],
+                    ["Check for leaks; set the throttle stop / IAC so idle meets target."],
+                    "medium"))
+            elif gap < -dc.idle_rpm_tol:
+                out.append(Finding(
+                    "IDLE_LOW", "warning", "Idle lower than target (stall risk)",
+                    f"Idle sits ~{idle_rpm:.0f} vs a target of ~{target:.0f} rpm "
+                    f"({gap:.0f}).",
+                    ["not enough idle airflow", "IAC out of authority", "idle spark too low"],
+                    ["Raise idle airflow (IAC/min-air) so it holds target; "
+                     "check idle timing isn't too retarded."], "medium"))
+
+    # Idle AFR
+    afr = _num(df, col, "afr_actual")
+    if afr is not None:
+        av = afr[idle].dropna()
+        if len(av) > 20:
+            a = float(av.median())
+            if a < dc.idle_afr_rich:
+                out.append(Finding("IDLE_RICH", "info", "Idle is rich",
+                    f"Idle AFR ~{a:.1f} - rich; can load up, smell, and foul over time.",
+                    ["idle fuel / base table rich at idle"],
+                    ["Lean idle fueling toward ~14.0-14.7; watch idle quality."], "medium"))
+            elif a > dc.idle_afr_lean:
+                out.append(Finding("IDLE_LEAN", "warning", "Idle is lean",
+                    f"Idle AFR ~{a:.1f} - lean idle hunts and can stall.",
+                    ["vacuum leak", "idle fuel too low"],
+                    ["Smoke-test for leaks first; otherwise add idle fuel toward ~14.2."],
+                    "medium"))
+
+    # IAC fully closed but idle isn't low -> extra air getting in (leak / base air high)
+    iac = _num(df, col, "iac")
+    if iac is not None:
+        iv = iac[idle].dropna()
+        if len(iv) > 20 and float(iv.median()) < 2.0:
+            out.append(Finding("IAC_CLOSED", "info",
+                "IAC fully closed at idle",
+                f"The idle air valve is commanded shut (~{float(iv.median()):.0f}) yet "
+                "idle still holds - extra air is getting in somewhere it shouldn't.",
+                ["vacuum/throttle leak", "throttle blade cracked open too far"],
+                ["Find the unmetered air (smoke test) or close the throttle stop so the "
+                 "IAC has room to control idle."], "low"))
+
+    # Idle timing swinging a lot -> idle spark correction fighting RPM
+    spk = _num(df, col, "spark")
+    if spk is None:
+        spk = _num(df, col, "ign")
+    if spk is not None:
+        sv = spk[idle].dropna()
+        if len(sv) > 40 and float(sv.std()) > dc.idle_timing_std:
+            out.append(Finding("IDLE_TIMING_SWING", "info",
+                "Idle timing is swinging",
+                f"Idle spark advance varies a lot (std {float(sv.std()):.1f} deg) - the "
+                "idle spark-vs-RPM correction may be amplifying the hunt.",
+                ["idle spark correction (rpm error -> timing) too strong"],
+                ["Soften idle spark correction while you stabilize idle airflow/fuel."],
+                "low"))
+    return out
+
+
 _DETECTORS = [_d_cruise_trim, _d_bank_imbalance, _d_wb_vs_commanded,
               _d_wot_fueling, _d_injector_duty, _d_knock, _d_temps,
               _d_trim_oscillation]
@@ -582,17 +776,22 @@ def diagnose(df: pd.DataFrame, col: dict, cfg, dc: DiagnosticConfig | None = Non
         for f in (r if isinstance(r, list) else [r]):
             if f.id not in skip:
                 findings.append(f)
-    # context-aware detectors (need cam / profile)
+    # context-aware detectors (need cam / profile) + idle + cold-start groups
     try:
         vl = _d_vacuum_leak(df, col, cfg, dc, warm, cam_class)
         if vl is not None and vl.id not in skip:
             findings.append(vl)
     except Exception:        # pragma: no cover - defensive
         pass
-    try:
-        findings.extend(_boost_findings(df, col, cfg, dc, warm, profile))
-    except Exception:        # pragma: no cover - defensive
-        pass
+    for group, args in ((_idle_findings, (df, col, cfg, dc, warm)),
+                        (_coldstart_findings, (df, col, cfg, dc)),
+                        (_boost_findings, (df, col, cfg, dc, warm, profile))):
+        try:
+            for f in group(*args):
+                if f.id not in skip:
+                    findings.append(f)
+        except Exception:    # pragma: no cover - defensive
+            continue
     conf_rank = {"high": 0, "medium": 1, "low": 2}
     findings.sort(key=lambda f: (SEVERITY_RANK.get(f.severity, 9),
                                  conf_rank.get(f.confidence, 9)))

@@ -227,15 +227,35 @@ tune quality), `opportunity` (free power / refinement), `info`.
 - **Knock only when heat-soaked**: cooling + IAT-based spark retard; iron blocks
   especially (§11). **Cruise/light-load knock**: over-aggressive economy timing.
 
-### Idle & drivability
-- **Hunting idle** (see triage): vacuum leak (lean hunt), IAC range/min-air,
-  idle spark-vs-rpm correction too strong, or loading up rich.
-- **High/low idle**: throttle stop / IAC min air-flow / idle airflow target.
+### Cold start & warmup (`_coldstart_findings`, runs on the FULL log)
+- **Never reached operating temp**: over a long log (`warmup_min_duration_s`)
+  coolant stays below `thermostat_min_f` → stuck-open/missing/wrong thermostat;
+  also means any cruise/VE data while cold isn't valid to tune on.
+- **Warmup rich / lean**: while warming (ECT between ~90 °F and operating temp),
+  wideband AFR richer than `warmup_rich_afr` (loads up / fouls / washes bores) or
+  leaner than `warmup_lean_afr` (cold stumble/stall) → trim the coolant/afterstart
+  enrichment-vs-temp curve.
+- **Enrichment not decayed**: afterstart/coolant enrichment still elevated when
+  warm. We detect the channel's *neutral baseline* (0 = none, or 100 % = neutral
+  on Holley) so a settled 100 % is NOT flagged — only a real elevation above
+  neutral is. → taper enrichment to neutral by operating temp.
+
+### Idle quality (`_idle_findings`, warm idle samples)
+- **Hunting / surging**: idle RPM std above `idle_hunt_std` → vacuum leak (lean
+  hunt), IAC range/min-air, idle spark correction too strong, or loading up rich.
+- **Off-target idle**: actual idle RPM vs the logged target idle beyond
+  `idle_rpm_tol` — high (leak / throttle stop / IAC can't pull it down) or low
+  (not enough idle air, IAC out of authority, idle timing too low / stall risk).
+- **Idle AFR** rich (`idle_afr_rich`) or lean (`idle_afr_lean`).
+- **IAC fully closed** at idle yet idle holds → extra unmetered air (leak) or the
+  throttle stop is cracked too far (IAC has no room to control).
+- **Idle timing swinging** (spark std > `idle_timing_std`) → idle spark-vs-RPM
+  correction amplifying the hunt; soften it while stabilizing airflow/fuel.
+
+### Drivability (transient — future, see Open ideas)
 - **Tip-in stumble**: accel-enrichment too low or MAF transient lag (SD fill).
-- **Decel popping**: too much decel fuel or an exhaust leak with lean decel;
-  check decel fuel cutoff.
-- **Steady-cruise surge**: cruise too lean (economy), torque management, or
-  closed-loop oscillation.
+- **Decel popping**: too much decel fuel or an exhaust leak with lean decel.
+- **Steady-cruise surge**: cruise too lean, torque management, or CL oscillation.
 
 ### Cooling / charge temp
 - **Overheat** (ECT > `ect_hot`): cooling/fan tables, or a lean/over-advanced

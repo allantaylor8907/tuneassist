@@ -90,6 +90,11 @@ CHANNEL_PATTERNS = {
     "baro":        [r"barometric", r"\bbaro\b"],
     "fuelpres":    [r"fuel.*rail.*pres", r"fuel.*pres", r"\bfp\b(?!.*set)"],
     "boost":       [r"boost"],
+    "iac":         [r"idle.*air.*control", r"\biac\b"],
+    "idle_target": [r"desired.*idle", r"target.*idle", r"idle.*desired",
+                    r"commanded.*idle"],
+    "ase":         [r"after.?start", r"start.*enrich"],
+    "warmup_enr":  [r"warm.?up.*enrich", r"coolant.*enrich"],
 }
 
 

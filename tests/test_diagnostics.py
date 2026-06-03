@@ -226,6 +226,84 @@ def test_na_log_has_no_boost_findings():
     assert "FORCED_INDUCTION" not in ids and "BOOST_LEAN" not in ids
 
 
+# ---- cold start / warmup ----
+def _warmup_log(warmup_afr=14.7, ect_max=190.0, dur_s=400.0, ase_warm=0.0,
+                ase_neutral=0.0, n=2000):
+    t = np.linspace(0, dur_s, n)
+    ect = np.clip(70 + (ect_max - 70) * (t / (dur_s * 0.6)), 70, ect_max)
+    afr = np.where(ect < 160, warmup_afr, 14.7)
+    ase = np.where(ect < 160, ase_warm + 30, ase_neutral) if ase_warm or ase_neutral else None
+    d = {"Time": t, "Engine RPM": np.full(n, 1100.0), "MAP": np.full(n, 45.0),
+         "Throttle Position": np.full(n, 4.0), "Coolant Temp": ect, "Wideband AFR": afr}
+    # afterstart enrichment that stays elevated when warm (ase_warm above neutral)
+    if ase_warm:
+        d["Afterstart Enr"] = np.where(ect < 160, ase_neutral + 30, ase_neutral + ase_warm)
+    return pd.DataFrame(d)
+
+
+def test_thermostat_never_reaches_temp():
+    assert "THERMOSTAT" in _ids(_diag(_warmup_log(ect_max=150.0, dur_s=400.0)))
+
+
+def test_warm_engine_no_thermostat_flag():
+    assert "THERMOSTAT" not in _ids(_diag(_warmup_log(ect_max=195.0)))
+
+
+def test_warmup_rich():
+    assert "WARMUP_RICH" in _ids(_diag(_warmup_log(warmup_afr=11.3)))
+
+
+def test_warmup_lean():
+    assert "WARMUP_LEAN" in _ids(_diag(_warmup_log(warmup_afr=16.0)))
+
+
+def test_enrichment_not_decayed_100_based_neutral():
+    # 100% = neutral (Holley): warm value ~100 must NOT flag; ~130 must flag
+    ok = _warmup_log(ase_warm=0, ase_neutral=100)     # warm settles at 100 (neutral)
+    assert "ENRICH_NOT_DECAYED" not in _ids(_diag(ok))
+    bad = _warmup_log(ase_warm=30, ase_neutral=100)   # warm stuck at 130
+    assert "ENRICH_NOT_DECAYED" in _ids(_diag(bad))
+
+
+# ---- idle quality ----
+def _idle_log(idle_rpm=750.0, std=20.0, target=750.0, afr=14.5, iac=25.0,
+              timing_std=1.0, n=1200):
+    rng = np.random.default_rng(0)
+    rpm = np.clip(idle_rpm + rng.normal(0, std, n), 500, 1300)
+    return pd.DataFrame({
+        "Engine RPM": rpm, "MAP": np.full(n, 42.0), "Throttle Position": np.full(n, 4.0),
+        "Coolant Temp": np.full(n, 195.0), "Wideband AFR": np.full(n, afr),
+        "Desired Idle Speed": np.full(n, target),
+        "Idle Air Control Position": np.full(n, iac),
+        "Timing Advance": 20 + rng.normal(0, timing_std, n)})
+
+
+def test_idle_hunt():
+    assert "IDLE_HUNT" in _ids(_diag(_idle_log(std=140.0)))
+
+
+def test_idle_high_vs_target():
+    assert "IDLE_HIGH" in _ids(_diag(_idle_log(idle_rpm=1000.0, target=750.0)))
+
+
+def test_idle_low_vs_target():
+    assert "IDLE_LOW" in _ids(_diag(_idle_log(idle_rpm=560.0, target=800.0)))
+
+
+def test_idle_lean_and_rich():
+    assert "IDLE_LEAN" in _ids(_diag(_idle_log(afr=15.8)))
+    assert "IDLE_RICH" in _ids(_diag(_idle_log(afr=12.6)))
+
+
+def test_iac_closed_at_idle():
+    assert "IAC_CLOSED" in _ids(_diag(_idle_log(iac=1.0)))
+
+
+def test_clean_warm_idle_has_no_idle_warnings():
+    ids = _ids(_diag(_idle_log()))   # steady, on-target, ~14.5 AFR, IAC open
+    assert not (ids & {"IDLE_HUNT", "IDLE_HIGH", "IDLE_LOW", "IDLE_LEAN"})
+
+
 def test_clean_log_has_no_critical_findings():
     df = _base()
     df["Short Term Fuel Trim Bank 1"] = 1.0

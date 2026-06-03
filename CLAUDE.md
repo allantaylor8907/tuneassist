@@ -46,10 +46,13 @@ tunable state.
 - `diagnostics.py` — **pattern-based symptom→cause→correction engine** (DESIGN
   §12). `diagnose(df, col, cfg, platform, profile) → [Finding]`: lean/rich cruise,
   vacuum leak, bank imbalance, WB-vs-NB (GM-only), WOT shortfall/lean/rich,
-  injector duty, knock, temps, trim oscillation, and a **forced-induction** set
-  (boost-lean, fuel-pressure-drop, MAP-sensor-range, CL-in-boost, boost-IAT).
-  Detectors degrade if channels absent; findings ranked critical→info and shown
-  as a readable "What I see / Likely / Do this" panel. ASCII-safe. Tested.
+  injector duty, knock, temps, trim oscillation, a **forced-induction** set
+  (boost-lean, fuel-pressure-drop, MAP-sensor-range, CL-in-boost, boost-IAT), a
+  **cold-start/warmup** set (thermostat, warmup rich/lean, enrichment-not-decayed
+  with neutral-baseline detection), and an **idle-quality** set (hunt, off-target
+  vs logged idle target, idle AFR, IAC-closed, idle-timing swing). Detectors
+  degrade if channels absent; findings ranked critical→info and shown as a
+  readable "What I see / Likely / Do this" panel. ASCII-safe. Tested.
 - `cams.py` — optional cam specs → conservative idle/timing starting points
   (DESIGN §11). Classify stock/mild/big; starting-point guidance only. Tested.
 - `profile.py` — optional engine profile (block material, compression, power
