@@ -97,6 +97,65 @@ def test_safety_finding_flags_hardware_limit():
     assert wot and any("won't be fixed" in c.lower() for c in wot[0].corrections)
 
 
+def _synth_trim_log(trim_fn, tmp):
+    import numpy as np, pandas as pd
+    n = 1600
+    rpm = np.clip(2200 + 1700 * np.sin(np.arange(n) / 30), 700, 5600)
+    mapk = np.clip(50 + 38 * np.sin(np.arange(n) / 25), 22, 98)
+    df = pd.DataFrame({"Time": np.arange(n) * 0.05, "Engine RPM": rpm,
+                       "Intake Manifold Absolute Pressure": mapk,
+                       "Throttle Position": np.clip(mapk - 20, 0, 100),
+                       "Coolant Temp": np.full(n, 195.0), "Commanded AFR": np.full(n, 14.7),
+                       "Short Term Fuel Trim Bank 1": trim_fn(rpm, mapk),
+                       "Long Term Fuel Trim Bank 1": np.zeros(n)})
+    p = os.path.join(tmp, "synth.csv")
+    df.to_csv(p, index=False)
+    return p
+
+
+def test_mod_larger_injectors_explains_flat_offset():
+    import numpy as np, tempfile
+    from tuneassist.profile import EngineProfile
+    with tempfile.TemporaryDirectory() as d:
+        p = _synth_trim_log(lambda r, m: np.full(len(r), 5.0), d)  # flat +5%
+        cr = analyze_log(p, _opts(profile=EngineProfile(mods=["Larger injectors"])))
+    assert cr.summary.offset.get("shape") == "global_offset"
+    af = [f for f in cr.findings if f.id == "APPLY_FUEL"][0]
+    assert any("larger injectors" in c.lower() and "injector data" in c.lower()
+               for c in af.corrections)
+
+
+def test_mod_airflow_explains_lean_up_top():
+    import numpy as np, tempfile
+    from tuneassist.profile import EngineProfile
+    with tempfile.TemporaryDirectory() as d:
+        p = _synth_trim_log(lambda r, m: np.where((r > 3000) | (m > 75), 7.0, 0.5), d)
+        cr = analyze_log(p, _opts(profile=EngineProfile(mods=["Ported heads", "Long-tube headers"])))
+    af = [f for f in cr.findings if f.id == "APPLY_FUEL"][0]
+    assert any("expected from your airflow mods" in c.lower() for c in af.corrections)
+
+
+def test_mod_long_tubes_add_header_leak_to_bank_imbalance():
+    import numpy as np, pandas as pd
+    from tuneassist.core import _apply_mod_insights
+    from tuneassist.diagnostics import diagnose
+    from tuneassist.engine_gm import resolve_columns
+    n = 600
+    df = pd.DataFrame({"Engine RPM": np.full(n, 2000.0), "MAP": np.full(n, 45.0),
+                       "Throttle Position": np.full(n, 25.0), "Coolant Temp": np.full(n, 195.0),
+                       "Short Term Fuel Trim Bank 1": np.full(n, 8.0),
+                       "Long Term Fuel Trim Bank 1": np.zeros(n),
+                       "Short Term Fuel Trim Bank 2": np.full(n, -3.0),
+                       "Long Term Fuel Trim Bank 2": np.zeros(n)})
+    fs = diagnose(df, resolve_columns(df), Config())
+
+    class _S:
+        offset = {}
+    _apply_mod_insights(fs, _S(), None, ["Long-tube headers"])
+    bank = [f for f in fs if f.id == "BANK_IMBALANCE"][0]
+    assert any("exhaust leak" in c.lower() for c in bank.causes)
+
+
 def test_cold_log_reports_blocker_not_grid():
     d = analyze_log(os.path.join(FIX, "jr42.csv"), _opts()).to_dict()
     assert d.get("empty_reason") and "operating temp" in d["empty_reason"]

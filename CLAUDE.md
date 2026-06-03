@@ -68,7 +68,10 @@ tunable state.
   opts) → CoreResult` orchestrates ingest→triage→analyze→spark→maf→stage→
   prescribe. `CoreResult.to_dict()` is the stable JSON contract + regression
   oracle. Owns `SessionOpts`, `detect_platform`, `ingest`, `_HolleyResult`,
-  `_blocked_prescription`, and the garage codec `opts_to_record`/`record_to_opts`.
+  `_blocked_prescription`, the garage codec `opts_to_record`/`record_to_opts`,
+  `_primary_change_finding` (the lead "apply this" item), `_annotate_safety_
+  resolution` (does the change fix the safety issue?), and `_apply_mod_insights`
+  (bolt-ons explain the data — DESIGN §13).
 - `panels.py` — **pure Rich renderable *builders*** (no printing/IO): banner,
   journey bar, triage, heatmaps, cross-check, spark, MAF, safety, prescription,
   and `build_report(cr, …)` (the whole result as one Group). Shared by both UIs.

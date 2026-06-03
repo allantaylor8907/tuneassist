@@ -34,7 +34,7 @@ from .render import console
 from . import stages
 from . import cams
 from . import garage
-from .profile import EngineProfile
+from .profile import EngineProfile, ENGINE_PRESETS, COMMON_MODS, preset_to_profile
 
 
 FUELS = {
@@ -165,36 +165,66 @@ def _clarify(io: WizardIO, df, platform: str) -> SessionOpts:
         opts.tune_spark = True
         opts.find_power = io.confirm("    Probe for MORE power (add timing cautiously)?",
                                      default=False)
-        # engine profile sharpens the spark ceiling + pull-back advice (all optional)
-        if io.confirm("    Add engine details for tailored spark advice? (optional)",
-                      default=False):
-            bl = str(io.ask("      Block: [bold]i[/]ron / [bold]a[/]luminum",
-                            default="")).strip().lower()
-            block = "iron" if bl.startswith("i") else "alum" if bl.startswith("a") else None
-            cr = io.ask_float("      Static compression ratio (e.g. 10.5)")
-            disp = io.ask_float("      Displacement (liters)")
-            adder = str(io.ask("      Power adder: [bold]na[/] / boost / nitrous",
-                               default="na")).strip().lower() or "na"
-            if adder not in ("na", "boost", "nitrous"):
-                adder = "na"
-            opts.profile = EngineProfile(block=block, compression=cr,
-                                         displacement=disp, power_adder=adder)
-            console.print(f"  -> engine: {block or '?'} block, "
-                          f"{cr or '?'}:1, {adder}")
 
-    # --- optional cam specs -> starting points ---
-    if io.confirm("  Enter cam specs for idle/timing starting points? (optional)",
-                  default=False):
-        cam = cams.CamSpec(
-            intake_dur_050=io.ask_float("    Intake duration @ .050"),
-            exhaust_dur_050=io.ask_float("    Exhaust duration @ .050"),
-            lsa=io.ask_float("    LSA (lobe separation angle)"),
-            lift=io.ask_float("    Max lift (in)"))
-        opts.cam_spec = cam
-        opts.cam_points = cams.starting_points(cam)
-        console.print(f"  -> cam classified [bold]{opts.cam_points.klass}[/]")
+    # --- engine + mods + cam (presets; improves diagnosis & spark advice) ---
+    if io.confirm("  Add engine, mods & cam details? (presets -- sharpens the "
+                  "diagnosis)", default=False):
+        _ask_engine_cam(io, opts)
 
     return opts
+
+
+def _ask_engine_cam(io: WizardIO, opts: SessionOpts) -> None:
+    """Preset-driven engine / mods / cam entry (parity with the Textual setup)."""
+    # Engine preset
+    console.print("  [bold]Engine[/] (0 = custom/other):")
+    for i, (lbl, *_r) in enumerate(ENGINE_PRESETS, 1):
+        console.print(f"    [grey50]{i:>2}[/]) {lbl}")
+    sel = str(io.ask("  Engine #", default="0")).strip()
+
+    # Mods
+    console.print("  [bold]Mods[/] (comma-separated #s, blank for none):")
+    console.print("    " + "  ".join(f"[grey50]{i}[/]={m}"
+                                     for i, m in enumerate(COMMON_MODS, 1)))
+    raw = str(io.ask("  Mods", default="")).strip()
+    mods = [COMMON_MODS[int(tok) - 1] for tok in raw.replace(" ", "").split(",")
+            if tok.isdigit() and 1 <= int(tok) <= len(COMMON_MODS)]
+    adder = ("boost" if any(m in ("Turbo", "Supercharger") for m in mods)
+             else "nitrous" if "Nitrous" in mods else "na")
+
+    if sel.isdigit() and 1 <= int(sel) <= len(ENGINE_PRESETS):
+        opts.profile = preset_to_profile(ENGINE_PRESETS[int(sel) - 1][0],
+                                          power_adder=adder, mods=mods)
+        console.print(f"  -> [bold]{opts.profile.engine}[/]"
+                      + (f"  +{adder}" if adder != "na" else "")
+                      + (f"  ({len(mods)} mods)" if mods else ""))
+    else:
+        bl = str(io.ask("  Block: [bold]i[/]ron / [bold]a[/]luminum", default="")).strip().lower()
+        block = "iron" if bl.startswith("i") else "alum" if bl.startswith("a") else None
+        crv = io.ask_float("  Static compression (e.g. 10.5)")
+        if block or crv or mods or adder != "na":
+            opts.profile = EngineProfile(block=block, compression=crv,
+                                         displacement=io.ask_float("  Displacement (L)"),
+                                         power_adder=adder, mods=mods)
+
+    # Cam (easy tiers or custom)
+    tier = str(io.ask("  Cam: [bold]s[/]tock / [bold]m[/]ild / [bold]r[/]ace / "
+                      "[bold]c[/]ustom / [bold]n[/]one", default="n")).strip().lower()
+    spec = None
+    if tier.startswith("s"):
+        spec = cams.tier_spec("stock")
+    elif tier.startswith("m"):
+        spec = cams.tier_spec("mild")
+    elif tier.startswith("r"):
+        spec = cams.tier_spec("race")
+    elif tier.startswith("c"):
+        spec = cams.CamSpec(intake_dur_050=io.ask_float("    Intake dur @ .050"),
+                            exhaust_dur_050=io.ask_float("    Exhaust dur @ .050"),
+                            lsa=io.ask_float("    LSA"), lift=io.ask_float("    Max lift (in)"))
+    if spec is not None:
+        opts.cam_spec = spec
+        opts.cam_points = cams.starting_points(spec)
+        console.print(f"  -> cam classified [bold]{opts.cam_points.klass}[/]")
 
 
 def _ask_platform(io: WizardIO, path: str) -> str:
@@ -218,7 +248,12 @@ def _setup_summary(platform: str, opts: SessionOpts) -> str:
         bits.append(f"{opts.cam_points.klass} cam")
     if opts.profile:
         p = opts.profile
-        bits.append(f"{p.block or '?'} {p.compression or '?'}:1 {p.power_adder}")
+        bits.append(getattr(p, "engine", None) or f"{p.block or '?'} {p.compression or '?'}:1")
+        if p.power_adder and p.power_adder != "na":
+            bits.append(p.power_adder)
+        mods = getattr(p, "mods", None)
+        if mods:
+            bits.append(f"{len(mods)} mod" + ("s" if len(mods) != 1 else ""))
     return "[grey70]Saved setup:[/] " + "  |  ".join(bits)
 
 

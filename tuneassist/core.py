@@ -160,6 +160,67 @@ def _primary_change_finding(summary, platform: str, airflow_mode: str):
                    f"(mostly {focus}).", [], corrections, "high")
 
 
+def _raises_fuel_up_top(result) -> bool:
+    """True if the correction adds fuel (positive) in the upper RPM / high-load
+    cells -- the signature of an airflow increase the base table doesn't model."""
+    corr = getattr(result, "correction", None)
+    if corr is None or corr.empty:
+        return False
+    vals = []
+    for r in corr.index:
+        for c in corr.columns:
+            v = corr.loc[r, c]
+            if pd.isna(v):
+                continue
+            rpm_mid = float(getattr(r, "mid", 0) or 0)
+            map_mid = float(getattr(c, "mid", 0) or 0)
+            if rpm_mid >= 2800 or map_mid >= 80:
+                vals.append((v - 1.0) * 100.0)
+    if len(vals) < 4:
+        return False
+    return (sum(vals) / len(vals)) > 1.5
+
+
+def _apply_mod_insights(findings, summary, result, mods):
+    """Let the checked bolt-ons explain the data: each note fires only when the
+    data shows the matching pattern (DESIGN.md S13)."""
+    low = " | ".join(m.lower() for m in mods)
+    def has(*subs):
+        return any(s in low for s in subs)
+    by_id = {f.id: f for f in findings}
+    off = summary.offset or {}
+
+    apply_f = by_id.get("APPLY_FUEL")
+    if apply_f is not None:
+        if has("larger injector", "injector") and off.get("shape") == "global_offset":
+            apply_f.corrections.insert(0,
+                "You're running LARGER INJECTORS and this correction is a flat offset -- "
+                "that's almost always the injector flow-rate/scaling not updated. Set the "
+                "correct injector data FIRST; it likely flattens most of this.")
+        if has("intake manifold") and off.get("shape") == "table_shape":
+            apply_f.corrections.append(
+                "Your intake-manifold swap reshapes the VE curve (new runners move where it "
+                "breathes best) -- expect to reshape cells, not apply one scalar.")
+        if has("ported head", "long-tube", "header", "cold-air", "throttle body") \
+                and _raises_fuel_up_top(result):
+            apply_f.corrections.append(
+                "The raise-VE up top is EXPECTED from your airflow mods (heads/headers/intake) "
+                "-- the engine flows more than the stock table models. Adding fuel there is "
+                "correct calibration, not a fault.")
+
+    bank = by_id.get("BANK_IMBALANCE")
+    if bank is not None and has("long-tube", "header"):
+        bank.causes.insert(0,
+            "a header collector/gasket exhaust leak near one O2 (common right after install) "
+            "reading false-lean on that bank")
+
+    lean = by_id.get("LEAN_CRUISE")
+    if lean is not None and has("cold-air", "intake"):
+        lean.causes.append(
+            "a cold-air intake / intake-tube change alters the MAF airflow signal -- the MAF "
+            "curve may need recalibration (not the VE table)")
+
+
 def _annotate_safety_resolution(findings, summary, platform: str, airflow_mode: str):
     """Append a line to each fuel-safety finding stating whether applying the
     recommended fuel/VE correction resolves it, or -- if it can't (a hardware
@@ -302,6 +363,10 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
         # Tell the user whether the recommended fuel/VE change resolves each
         # safety finding -- or, if it can't, what actually needs to change.
         _annotate_safety_resolution(findings, summary, platform, opts.airflow_mode)
+        # Use the engine's bolt-on mods to explain the data (DESIGN.md S13).
+        mods = list(getattr(opts.profile, "mods", []) or [])
+        if mods:
+            _apply_mod_insights(findings, summary, result, mods)
 
     spark_has_work = bool(spark and spark.can_run and
                           (spark.knock_cells or (spark.action is not None and

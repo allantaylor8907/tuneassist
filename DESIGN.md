@@ -75,6 +75,38 @@ Warm only (coolant ≥ 160 °F — a cold clip is correctly rejected outright),
 drop hard transients (TPS rate), drop idle-off/cranking (RPM ≤ 400), trimmed
 mean per cell to kill outliers/glitches.
 
+## 13. What the mods do — using bolt-ons to explain the data (`core._apply_mod_insights`)
+The user picks an engine preset and checks mods. Those mods predict *how the data
+should look*, so we use them to explain findings and sharpen advice (not to invent
+changes). Each insight only fires when the data actually shows the matching
+pattern — so it's context, not noise.
+
+- **Larger injectors** → a global fueling scalar. Bigger injectors flow more, so
+  if the injector flow-rate/scaling isn't updated the engine runs rich/lean by a
+  roughly **flat** amount everywhere. So: larger-injectors + a *flat global
+  offset* (§5) ⇒ it's almost certainly the **injector data**, not the VE table —
+  fix the flow rate first, it flattens most of the correction. (Big injectors
+  also idle poorly at tiny pulsewidths — a separate nonlinearity.)
+- **Ported heads / long-tube headers / cold-air intake / bigger throttle body**
+  → more airflow, weighted to higher RPM/load. The engine breathes *more than the
+  stock VE table models*, so a **raise-VE up top** is *expected calibration*, not
+  a fault. We say so when the correction is positive in the upper RPM/load cells.
+- **Long-tube headers** also → a **collector/gasket exhaust leak near one O2** is
+  common right after install and reads *false-lean* on that bank → added as a
+  prime cause when a **bank imbalance** shows up.
+- **Cold-air intake / intake tube change** on a MAF setup → changes the MAF's
+  airflow signal (tube diameter/velocity), so **lean cruise** trims may be a
+  **MAF-curve** recal, not VE. Also lowers IAT (good for knock).
+- **Intake-manifold swap** → different runner length/plenum **reshapes the VE
+  curve** (moves where it breathes best) ⇒ expect *table-shape* changes, not a
+  single scalar. Said when the correction varies (table-shape).
+- **Aftermarket cam** (also see §11) → lower idle vacuum (higher, unsteadier idle
+  MAP), overlap dilution/reversion at idle (can mimic a vacuum leak → we already
+  soften leak confidence), torque peak higher, VE shifts up in RPM.
+- **Turbo / Supercharger / Nitrous** → set the power-adder; drive the
+  forced-induction / nitrous logic (§12, §10). Checking them in setup flips the
+  profile's `power_adder` automatically.
+
 ## Known fixtures and expected behavior (build these into tests/)
 - Silverado cruise CSV: flat ~−4.7% rich bias, ~62% coverage. Global-offset shape.
 - `ride42` CSV (AEM wideband): median ~−0.8%, scattered ±3-6%, well-sorted tune.

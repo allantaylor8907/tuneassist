@@ -44,6 +44,22 @@ def test_spark_enabled_runs_without_crash():
         "TUNE_VE_SD", "TUNE_MAF", "TUNE_POWER", "CONVERGED")
 
 
+def test_wizard_engine_preset_mods_and_cam():
+    from tuneassist.wizard import _clarify
+    from tuneassist.core import ingest
+    from tuneassist.profile import ENGINE_PRESETS
+    ls1 = [i for i, (l, *_r) in enumerate(ENGINE_PRESETS, 1) if "LS1" in l][0]
+    df, _ = ingest(os.path.join(FIX, "ride42.csv"), "gm", Config())
+    # fuel, airflow, spark(no), add-details(yes), engine#, mods(1,10), cam 'm'
+    io = WizardIO(scripted=["1", "1", False, True, str(ls1), "1,10", "m"])
+    opts = _clarify(io, df, "gm")
+    p = opts.profile
+    assert p.engine == "Chevy LS1 5.7 (aluminum)" and p.block == "alum"
+    assert p.power_adder == "boost"                      # Supercharger -> boost
+    assert "Ported heads" in p.mods and "Supercharger" in p.mods
+    assert opts.cam_points.klass == "mild"
+
+
 def test_full_session_quits_cleanly_on_q():
     with tempfile.TemporaryDirectory() as d:
         gp = os.path.join(d, "garage.json")
