@@ -92,6 +92,8 @@ def main(argv=None):
                    help="non-interactive: print the plain report and exit")
     p.add_argument("--tui", action="store_true",
                    help="launch the full Textual UI (mouse + keyboard)")
+    p.add_argument("--demo", action="store_true",
+                   help="launch the locked-down demo (bundled sample logs only)")
     p.add_argument("--json", action="store_true",
                    help="headless: print the structured analysis as JSON and exit")
     p.add_argument("--airflow", choices=["ve_sd", "maf", "no_maf"], default="ve_sd",
@@ -102,6 +104,11 @@ def main(argv=None):
     if args.tui:
         from .tui import run_tui
         run_tui()
+        return
+
+    if getattr(args, "demo", False):
+        from .demo import run_demo
+        run_demo()
         return
 
     if args.json and args.log:

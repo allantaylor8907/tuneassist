@@ -88,8 +88,11 @@ tunable state.
 - `garage.py` — on-disk per-vehicle memory (`~/.tuneassist/garage.json`): pure
   load/save/list/get/upsert, no package deps. Tolerates missing/corrupt files.
   Tests pass a temp `garage_path` so they never touch real home. Tested.
+- `demo.py` — locked-down demo entry for `textual serve` (`run_demo`): confines
+  file access to bundled `demo/samples/`, hides the native picker, throwaway
+  garage. `demo/serve.py` hosts it in a browser. Tested.
 - `cli.py` — orchestrator. No args/log path → Rich wizard; `--tui` → Textual app;
-  `--batch` → plain report; `--json` → headless structured output.
+  `--demo` → locked-down demo; `--batch` → plain report; `--json` → headless JSON.
 
 ## Architecture / distribution
 - **UI is decoupled from the engine.** `core.py` is headless (data in → data out);

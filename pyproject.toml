@@ -22,11 +22,14 @@ dependencies = [
 build = ["pyinstaller>=6.0"]
 # Image heatmaps (optional).
 plot = ["matplotlib>=3.7"]
+# Host the Textual demo in a browser (zero-install try-it link).
+serve = ["textual-serve>=1.0"]
 
 [project.scripts]
 # `pipx install .` / `uv tool install .` exposes these commands.
 tuneassist = "tuneassist.cli:main"
 tuneassist-tui = "tuneassist.tui:run_tui"
+tuneassist-demo = "tuneassist.demo:run_demo"
 
 [tool.setuptools]
 packages = ["tuneassist"]

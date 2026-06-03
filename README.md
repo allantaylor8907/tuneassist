@@ -41,6 +41,13 @@ Press **Ctrl+T** to cycle themes (gruvbox, nord, tokyo-night, …) — remembere
 per machine. **Quick scan** skips the garage for a one-off look; **Browse…**
 opens the native file picker.
 
+### Web demo (zero install for viewers)
+    pip install ".[serve]"
+    python demo/serve.py        # browser demo at http://localhost:8000
+
+Hosts the Textual app in a browser with bundled sample logs. Locked down (no
+server filesystem access) — see `demo/README.md`. For local use: `--demo`.
+
 ### Guided session (classic Rich wizard)
     python -m tuneassist.cli                 # asks for a log, walks you through
     python -m tuneassist.cli your_log.csv     # start on a specific log

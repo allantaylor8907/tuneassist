@@ -385,17 +385,26 @@ class AnalyzeScreen(Screen):
                 ("ctrl+o", "pick_file", "Open file…"), ("q", "app.quit", "Quit")]
 
     def compose(self) -> ComposeResult:
+        demo = getattr(self.app, "demo", False)
+        root = getattr(self.app, "samples_dir", None) or os.path.expanduser("~")
         yield Header(show_clock=True)
         yield Static(id="vehinfo")
         yield Static(panels.build_journey_bar(""), id="journey")
+        if demo:
+            yield Static("[b]Demo[/b] -- pick a bundled sample log below, then "
+                         "[b]Analyze[/b]. (File access is limited to the samples.)",
+                         id="demohint")
         with Horizontal(id="pathrow"):
             yield Input(placeholder="path to your exported log CSV…", id="path")
-            yield Button("Browse…", id="pick")
+            if not demo:
+                yield Button("Browse…", id="pick")
             yield Button("Analyze", variant="primary", id="analyze")
-        with Collapsible(title="…or browse in-app", id="browser", collapsed=True):
-            yield Input(value=os.path.expanduser("~"), id="treeroot",
-                        placeholder="folder to browse (Enter to go there)")
-            yield DirectoryTree(os.path.expanduser("~"), id="tree")
+        with Collapsible(title="Sample logs" if demo else "…or browse in-app",
+                         id="browser", collapsed=not demo):
+            if not demo:
+                yield Input(value=os.path.expanduser("~"), id="treeroot",
+                            placeholder="folder to browse (Enter to go there)")
+            yield DirectoryTree(root, id="tree")
         with TabbedContent(id="tabs"):
             with TabPane("Report", id="tab-report"):
                 yield VerticalScroll(Static(self._welcome(), id="results"))
@@ -474,6 +483,12 @@ class AnalyzeScreen(Screen):
         if not path:
             self.notify("Enter a log path first.", severity="warning")
             return
+        if getattr(self.app, "demo", False):
+            sd = self.app.samples_dir
+            if not sd or not os.path.abspath(path).startswith(os.path.join(sd, "")):
+                self.notify("Demo mode: only the bundled sample logs can be analyzed.",
+                            severity="warning")
+                return
         try:
             cr = core.analyze_log(path, self.app.opts, out_dir=None)
         except (FileNotFoundError, OSError) as ex:
@@ -603,6 +618,7 @@ class TuneAssistApp(App):
     #pathrow Input { width: 1fr; }
     #pathrow Button { margin: 0 0 0 2; }
     #browser { margin: 0 2; max-height: 14; }
+    #demohint { margin: 0 2; padding: 0 1; color: $text-muted; }
     #tabs { margin: 0 2; height: 1fr; }
     #results { padding: 1 2; }
     #grid, #cells { height: 1fr; }
@@ -627,7 +643,8 @@ class TuneAssistApp(App):
     THEMES = ["gruvbox", "nord", "tokyo-night", "catppuccin-mocha",
               "textual-dark", "textual-light"]
 
-    def __init__(self, garage_path: str | None = None):
+    def __init__(self, garage_path: str | None = None, demo: bool = False,
+                 samples_dir: str | None = None):
         super().__init__()
         self.garage_path = garage_path
         self.data = garage.load(garage_path)
@@ -636,6 +653,10 @@ class TuneAssistApp(App):
         self.platform = "gm"
         self.opts = core.SessionOpts(cfg=Config())
         self.history: list = []
+        # Demo (textual serve) mode: confine file access to the bundled samples
+        # so a hosted instance never exposes the server filesystem.
+        self.demo = demo
+        self.samples_dir = os.path.abspath(samples_dir) if samples_dir else None
 
     def on_mount(self):
         # remembered theme (per-machine), default gruvbox
