@@ -50,6 +50,24 @@ def test_json_values_match_known_fixture():
     assert d["stage"] == "TUNE_VE_SD"
 
 
+def test_primary_change_is_the_lead_finding():
+    # users must see "apply these changes (and where/how)" up top, not just
+    # peripheral issues -- the fuel/VE correction leads the diagnosis.
+    cr = analyze_log(os.path.join(FIX, "ride42.csv"), _opts())
+    assert cr.findings and cr.findings[0].id == "APPLY_FUEL"
+    f = cr.findings[0]
+    assert "VE table" in f.title
+    joined = " ".join(f.corrections).lower()
+    assert "multiply-by-percent" in joined and "main ve table" in joined
+
+
+def test_apply_finding_states_where_for_holley():
+    cr = analyze_log(os.path.join(FIX, "holley_sample.csv"),
+                     _opts(airflow_mode="no_maf"))
+    f = [x for x in cr.findings if x.id == "APPLY_FUEL"]
+    assert f and "base fuel" in " ".join(f[0].corrections).lower()
+
+
 def test_cold_log_reports_blocker_not_grid():
     d = analyze_log(os.path.join(FIX, "jr42.csv"), _opts()).to_dict()
     assert d.get("empty_reason") and "operating temp" in d["empty_reason"]

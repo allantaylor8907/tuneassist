@@ -125,6 +125,39 @@ def ingest(path: str, platform: str, cfg: Config):
     return df, col
 
 
+def _primary_change_finding(summary, platform: str, airflow_mode: str):
+    """Turn the main fuel/VE correction into a lead diagnosis item: WHAT to change,
+    WHERE (which table), and HOW (multiply-by-percent). None when nothing material
+    to change (converged or no confident cells)."""
+    from .diagnostics import Finding
+    worst = getattr(summary, "max_abs_pct", 0.0)
+    if getattr(summary, "n_confident", 0) == 0 or worst < 1.5:
+        return None
+    n = summary.n_confident
+    focus = summary.focus or "the populated cells"
+    off = summary.offset or {}
+    if platform == "holley":
+        table, what = "base fuel table", "Base fuel"
+    elif airflow_mode == "maf":
+        table, what = "MAF calibration (by frequency)", "MAF curve"
+    else:
+        table, what = "Main VE table", "VE table"
+    sev = "warning" if worst >= 3 else "info"
+    corrections = []
+    if (off.get("shape") == "global_offset" and platform != "holley"
+            and airflow_mode != "maf"):
+        corrections.append(
+            f"It's a nearly-FLAT ~{off.get('median_pct')}% offset -- a single scalar "
+            "(injector flow / fuel pressure) may fix it more cleanly than reshaping cells.")
+    corrections.append(
+        f"Apply the correction grid (shown below) to your {table}: multiply-by-percent "
+        "-- a +5 cell means multiply that cell by 1.05.")
+    corrections.append("Leave cells marked '-' (too few samples); re-log to confirm they shrink.")
+    return Finding("APPLY_FUEL", sev, f"{what} needs correction (apply the grid below)",
+                   f"The correction grid has changes up to {worst:.0f}% across {n} cells "
+                   f"(mostly {focus}).", [], corrections, "high")
+
+
 def _blocked_prescription(reason: str, cfg: Config, platform: str):
     """Tailored next-step when the log ran but yielded no usable cells."""
     reason = reason.replace("RESULT: ", "")
@@ -230,6 +263,15 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
                                             profile=opts.profile, cam_class=cam_class)
         except Exception as e:   # pragma: no cover - defensive
             notes.append(f"Diagnostics skipped: {e}")
+        # The main fuel/VE correction is itself a change to apply -- make it the
+        # lead diagnosis item so users see "what to change" up top, not just the
+        # peripheral issues.
+        primary = _primary_change_finding(summary, platform, opts.airflow_mode)
+        if primary is not None:
+            rank = diagnostics.SEVERITY_RANK
+            cr_ = {"high": 0, "medium": 1, "low": 2}
+            findings = [primary] + findings
+            findings.sort(key=lambda f: (rank.get(f.severity, 9), cr_.get(f.confidence, 9)))
 
     spark_has_work = bool(spark and spark.can_run and
                           (spark.knock_cells or (spark.action is not None and

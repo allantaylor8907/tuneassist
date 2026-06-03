@@ -146,10 +146,13 @@ def build_correction_heatmap(correction, counts=None,
         sign = "+" if change >= 0 else ""
         return Text(f"{sign}{change:.1f}", style=_pct_style(change))
 
+    howto = Text.from_markup(
+        "  [b]These are the changes to apply.[/] Each cell is the % to change that "
+        "RPM x MAP cell -- [b]multiply-by-percent[/] (a +5 cell = multiply it by 1.05).")
     legend = Text.from_markup(
-        "  [green]green[/]=<1% leave  [bright_yellow]warm[/]=add fuel/raise VE  "
-        "[bright_cyan]cool[/]=pull fuel  [grey30]-[/]=too few samples")
-    return Group(_grid_table(correction, title, cell), legend)
+        "  [bright_yellow]warm[/]=add fuel/raise VE  [bright_cyan]cool[/]=pull fuel  "
+        "[green]green[/]=<1%, leave  [grey30]-[/]=too few samples, leave it")
+    return Group(_grid_table(correction, title, cell), howto, legend)
 
 
 def build_recommendation_grid(rec):
@@ -256,13 +259,14 @@ def build_safety(events):
 
 def build_prescription(rx):
     color = "green" if rx.converged else "blue"
+    step1 = "DONE -- no changes needed" if rx.converged else "1) CHANGE YOUR TUNE NOW"
     parts = [Text(rx.rationale, style="italic grey78"), Text(""),
-             Text("DO THIS NOW:", style="bold white")]
+             Text(step1 + ":", style="bold white")]
     for a in rx.actions:
         parts.append(Text.from_markup(f"  [bold {color}]>[/] {a}"))
-    parts += [Text(""), Text("THEN GO DRIVE:", style="bold white"),
+    parts += [Text(""), Text("2) THEN, BEFORE YOUR NEXT LOG:", style="bold white"),
               Text.from_markup(f"  [magenta]~[/] {rx.drive}")]
-    parts += [Text(""), Text("LOG THESE CHANNELS:", style="bold white"),
+    parts += [Text(""), Text("   LOG THESE CHANNELS:", style="bold white"),
               Text.from_markup("  [grey70]" + ", ".join(rx.capture) + "[/]")]
     return Panel(Group(*parts), box=box.HEAVY, border_style=color,
                  title=f"[bold {color}]NEXT STEP -- {rx.title}[/]",
