@@ -55,6 +55,19 @@ class CamStartingPoints:
     notes: list
 
 
+# "Easy" cam tiers -> a representative CamSpec (so classify/starting_points work).
+CAM_TIERS = {
+    "stock": CamSpec(intake_dur_050=196, exhaust_dur_050=201, lsa=115, lift=0.470),
+    "mild":  CamSpec(intake_dur_050=219, exhaust_dur_050=225, lsa=113, lift=0.560),
+    "race":  CamSpec(intake_dur_050=240, exhaust_dur_050=248, lsa=110, lift=0.630),
+}
+
+
+def tier_spec(tier: str) -> CamSpec | None:
+    """Representative CamSpec for an 'easy' tier (stock/mild/race), else None."""
+    return CAM_TIERS.get((tier or "").lower())
+
+
 def starting_points(cam: CamSpec) -> CamStartingPoints:
     """Conservative starting numbers for a cammed LS, by class."""
     klass = classify(cam)

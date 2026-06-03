@@ -12,7 +12,7 @@ Guidance only, knock-governed downstream -- nothing here is auto-applied.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -21,6 +21,53 @@ class EngineProfile:
     compression: float | None = None  # static CR, e.g. 9.5, 10.5
     displacement: float | None = None # liters, informational
     power_adder: str = "na"           # 'na' | 'boost' | 'nitrous'
+    engine: str | None = None         # preset label, e.g. "Chevy LS1 5.7"
+    mods: list = field(default_factory=list)   # ["Ported heads", ...]
+
+
+# Common engine presets -> (label, displacement L, block, static compression).
+# Pick-a-engine instead of asking for block/CR by hand. Approximate stock CR.
+ENGINE_PRESETS = [
+    # --- Chevy / GM LS (Gen 3/4) ---
+    ("Chevy LS 4.8 (iron)",            4.8, "iron", 9.5),
+    ("Chevy LS 5.3 (iron truck)",      5.3, "iron", 9.5),
+    ("Chevy LS 5.3 (aluminum)",        5.3, "alum", 9.6),
+    ("Chevy LS 6.0 LQ4 (iron)",        6.0, "iron", 9.4),
+    ("Chevy LS 6.0 LQ9 (iron)",        6.0, "iron", 10.0),
+    ("Chevy LS1 5.7 (aluminum)",       5.7, "alum", 10.1),
+    ("Chevy LS6 5.7 (aluminum)",       5.7, "alum", 10.5),
+    ("Chevy LS2 6.0 (aluminum)",       6.0, "alum", 10.9),
+    ("Chevy LS3 6.2 (aluminum)",       6.2, "alum", 10.7),
+    # --- Chevy Gen I small/big block ---
+    ("Chevy SBC 350 (iron)",           5.7, "iron", 9.0),
+    ("Chevy SBC 383 stroker",          6.3, "iron", 9.5),
+    ("Chevy BBC 454 (iron)",           7.4, "iron", 8.5),
+    # --- Ford ---
+    ("Ford 5.0 / 302 (iron)",          5.0, "iron", 9.0),
+    ("Ford 347 stroker",               5.7, "iron", 9.5),
+    ("Ford 351W (iron)",               5.8, "iron", 9.0),
+    ("Ford 4.6 modular 2V/3V",         4.6, "alum", 9.8),
+    ("Ford 5.4 modular",               5.4, "alum", 9.8),
+    ("Ford Coyote 5.0",                5.0, "alum", 11.0),
+    ("Ford BBF 460 (iron)",            7.5, "iron", 8.5),
+    # --- Pontiac ---
+    ("Pontiac 400 (iron)",             6.6, "iron", 8.5),
+    ("Pontiac 455 (iron)",             7.5, "iron", 8.4),
+]
+
+# Common bolt-on mods (context; stored on the profile and shown in the summary).
+COMMON_MODS = ["Ported heads", "Long-tube headers", "Cold-air intake",
+               "Intake manifold swap", "Bigger throttle body", "Larger injectors",
+               "Aftermarket cam", "Nitrous", "Turbo", "Supercharger"]
+
+
+def preset_to_profile(label: str, power_adder: str = "na", mods=None):
+    """Build an EngineProfile from a preset label (or None for custom)."""
+    for lbl, disp, block, cr in ENGINE_PRESETS:
+        if lbl == label:
+            return EngineProfile(block=block, compression=cr, displacement=disp,
+                                 power_adder=power_adder, engine=lbl, mods=list(mods or []))
+    return None
 
 
 def spark_guidance(profile: EngineProfile | None, stoich: float = 14.7):

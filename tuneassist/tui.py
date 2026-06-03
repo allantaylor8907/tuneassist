@@ -25,11 +25,11 @@ from textual.screen import Screen, ModalScreen
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import (Header, Footer, Button, Input, Select, Switch,
                              Static, Label, DataTable, DirectoryTree, Collapsible,
-                             TabbedContent, TabPane)
+                             TabbedContent, TabPane, Checkbox)
 
 from . import core, garage, cams, panels
 from .engine_gm import Config
-from .profile import EngineProfile
+from .profile import EngineProfile, ENGINE_PRESETS, COMMON_MODS, preset_to_profile
 
 
 FUELS = [("Pump gas 91-93", 14.7), ("E10 / 87-89", 14.08), ("E85", 9.76),
@@ -87,8 +87,14 @@ def _setup_summary(platform, opts) -> str:
         bits.append(f"{opts.cam_points.klass} cam")
     if opts.profile:
         p = opts.profile
-        bits.append(f"{p.block or '?'} {p.compression or '?'}:1 {p.power_adder}")
-    return "  •  ".join(bits)
+        bits.append(getattr(p, "engine", None)
+                    or f"{p.block or '?'} {p.compression or '?'}:1")
+        if p.power_adder and p.power_adder != "na":
+            bits.append(p.power_adder)
+        mods = getattr(p, "mods", None)
+        if mods:
+            bits.append(f"{len(mods)} mod" + ("s" if len(mods) != 1 else ""))
+    return "  -  ".join(bits)
 
 
 # --------------------------------------------------------------------------
@@ -243,9 +249,9 @@ class SetupScreen(Screen):
         yield Header()
         with VerticalScroll(id="setup"):
             if self.ephemeral:
-                yield Label("[b]Quick scan[/b]  (one-off — not saved to the garage)")
+                yield Label("[b]Quick scan[/b]  (one-off -- not saved to the garage)")
             else:
-                yield Label("[b]New vehicle setup[/b]  (asked once — remembered for next time)")
+                yield Label("[b]New vehicle setup[/b]  (asked once -- remembered next time)")
             if not self.ephemeral:
                 yield Label("Name"); yield Input(placeholder="e.g. 5.3 iron truck", id="name")
                 yield Label("Nickname (optional)"); yield Input(placeholder="e.g. Goldie", id="nick")
@@ -258,25 +264,44 @@ class SetupScreen(Screen):
             yield Label("Airflow strategy")
             yield Select([(lbl, i) for i, (lbl, _m) in enumerate(AIRFLOWS)],
                          value=0, allow_blank=False, id="airflow")
+
+            # --- Engine: pick a preset (fills block/compression/displacement) ---
+            yield Label("Engine")
+            yield Select([("Custom / other", "custom")]
+                         + [(lbl, lbl) for (lbl, *_r) in ENGINE_PRESETS],
+                         value="custom", allow_blank=False, id="engine")
+            with Collapsible(title="Custom engine details (if 'Custom' above)",
+                             id="custom-engine", collapsed=True):
+                yield Select([("iron block", "iron"), ("aluminum block", "alum")],
+                             prompt="Block material", id="block")
+                yield Input(placeholder="Static compression (e.g. 10.5)", id="cr")
+                yield Input(placeholder="Displacement (liters)", id="disp")
+
+            # --- Mods: check all that apply (Turbo/Super/Nitrous set the adder) ---
+            yield Label("Mods (check all that apply)")
+            with Horizontal(id="mods", classes="modwrap"):
+                for i, m in enumerate(COMMON_MODS):
+                    yield Checkbox(m, id=f"mod{i}", classes="modcheck")
+
+            # --- Cam: easy tiers, or custom specs ---
+            yield Label("Camshaft")
+            yield Select([("Stock / mostly stock", "stock"), ("Mild street", "mild"),
+                          ("Race / big", "race"), ("Custom (I have specs)", "custom"),
+                          ("Unknown / none", "none")],
+                         value="none", allow_blank=False, id="cam")
+            with Collapsible(title="Custom cam specs (if 'Custom' above)",
+                             id="custom-cam", collapsed=True):
+                yield Input(placeholder="Intake duration @ .050", id="cam_int")
+                yield Input(placeholder="Exhaust duration @ .050", id="cam_exh")
+                yield Input(placeholder="LSA", id="cam_lsa")
+                yield Input(placeholder="Max lift (in)", id="cam_lift")
+
             with Horizontal(classes="switchrow"):
                 yield Label("Tune spark/timing (needs knock channel)")
                 yield Switch(id="spark")
             with Horizontal(classes="switchrow"):
                 yield Label("Probe for more power (cautious adds)")
                 yield Switch(id="findpower")
-            with Collapsible(title="Cam specs (optional)"):
-                yield Input(placeholder="Intake duration @ .050", id="cam_int")
-                yield Input(placeholder="Exhaust duration @ .050", id="cam_exh")
-                yield Input(placeholder="LSA", id="cam_lsa")
-                yield Input(placeholder="Max lift (in)", id="cam_lift")
-            with Collapsible(title="Engine profile (optional — sharpens spark advice)"):
-                yield Select([("iron", "iron"), ("aluminum", "alum")],
-                             prompt="Block material", id="block")
-                yield Input(placeholder="Static compression (e.g. 10.5)", id="cr")
-                yield Input(placeholder="Displacement (liters)", id="disp")
-                yield Select([("naturally aspirated", "na"), ("boost", "boost"),
-                              ("nitrous", "nitrous")], value="na",
-                             allow_blank=False, id="adder")
             with Horizontal(id="setup-buttons"):
                 yield Button("Scan" if self.ephemeral else "Save & continue",
                              variant="primary", id="save")
@@ -289,6 +314,40 @@ class SetupScreen(Screen):
             return float(v) if v else None
         except ValueError:
             return None
+
+    def _checked_mods(self):
+        return [m for i, m in enumerate(COMMON_MODS)
+                if self.query_one(f"#mod{i}", Checkbox).value]
+
+    def _build_profile(self, mods):
+        adder = ("boost" if ("Turbo" in mods or "Supercharger" in mods)
+                 else "nitrous" if "Nitrous" in mods else "na")
+        engine = self.query_one("#engine", Select).value
+        if engine != "custom":
+            prof = preset_to_profile(engine, power_adder=adder, mods=mods)
+            if prof is not None:
+                return prof
+        blk = self.query_one("#block", Select).value
+        block = blk if isinstance(blk, str) else None
+        cr = self._f("cr")
+        if block or cr or mods or adder != "na":
+            return EngineProfile(block=block, compression=cr, displacement=self._f("disp"),
+                                 power_adder=adder, engine=None, mods=mods)
+        return None
+
+    def _build_cam(self, opts):
+        tier = self.query_one("#cam", Select).value
+        spec = None
+        if tier in ("stock", "mild", "race"):
+            spec = cams.tier_spec(tier)
+        elif tier == "custom":
+            ci, ce = self._f("cam_int"), self._f("cam_exh")
+            if ci or ce or self._f("cam_lsa"):
+                spec = cams.CamSpec(intake_dur_050=ci, exhaust_dur_050=ce,
+                                    lsa=self._f("cam_lsa"), lift=self._f("cam_lift"))
+        if spec is not None:
+            opts.cam_spec = spec
+            opts.cam_points = cams.starting_points(spec)
 
     def on_button_pressed(self, e: Button.Pressed):
         if e.button.id == "cancel":
@@ -309,18 +368,8 @@ class SetupScreen(Screen):
             cfg=cfg, airflow_mode=AIRFLOWS[self.query_one("#airflow", Select).value][1],
             tune_spark=self.query_one("#spark", Switch).value,
             find_power=self.query_one("#findpower", Switch).value)
-        ci, ce = self._f("cam_int"), self._f("cam_exh")
-        if ci or ce or self._f("cam_lsa"):
-            opts.cam_spec = cams.CamSpec(intake_dur_050=ci, exhaust_dur_050=ce,
-                                         lsa=self._f("cam_lsa"), lift=self._f("cam_lift"))
-            opts.cam_points = cams.starting_points(opts.cam_spec)
-        blk = self.query_one("#block", Select).value
-        block = blk if isinstance(blk, str) else None    # else it's the BLANK sentinel
-        cr = self._f("cr")
-        if block or cr:
-            opts.profile = EngineProfile(
-                block=block, compression=cr, displacement=self._f("disp"),
-                power_adder=self.query_one("#adder", Select).value)
+        opts.profile = self._build_profile(self._checked_mods())
+        self._build_cam(opts)
         self.app.load_vehicle(name, nick, platform, opts, [])
         if not self.ephemeral:
             self.app._persist_setup()
@@ -564,6 +613,8 @@ class TuneAssistApp(App):
     #setup Input, #setup Select { margin: 0 0 1 0; width: 70; }
     .switchrow { height: auto; }
     .switchrow Label { padding: 1 2 0 0; }
+    .modwrap { height: auto; width: 74; }
+    .modcheck { width: 36; height: auto; }
     #dialog {
         width: 60; height: auto; padding: 1 2; margin: 4 0;
         background: $panel; border: thick $primary; align: center middle;

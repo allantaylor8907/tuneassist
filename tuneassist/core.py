@@ -55,7 +55,9 @@ def opts_to_record(platform: str, opts: "SessionOpts") -> dict:
             "lsa": cam.lsa, "lift": cam.lift}),
         "profile": (None if prof is None else {
             "block": prof.block, "compression": prof.compression,
-            "displacement": prof.displacement, "power_adder": prof.power_adder}),
+            "displacement": prof.displacement, "power_adder": prof.power_adder,
+            "engine": getattr(prof, "engine", None),
+            "mods": list(getattr(prof, "mods", []) or [])}),
     }
 
 

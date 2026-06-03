@@ -51,7 +51,9 @@ def test_opts_record_roundtrip_preserves_everything():
     opts = SessionOpts(cfg=cfg, airflow_mode="maf", tune_spark=True, find_power=True,
                        cam_spec=cams.CamSpec(intake_dur_050=224, exhaust_dur_050=224, lsa=112),
                        profile=EngineProfile(block="alum", compression=10.5,
-                                             displacement=5.7, power_adder="na"))
+                                             displacement=5.7, power_adder="boost",
+                                             engine="Chevy LS1 5.7 (aluminum)",
+                                             mods=["Ported heads", "Turbo"]))
     opts.cam_points = cams.starting_points(opts.cam_spec)
 
     rec = _opts_to_record("gm", opts)
@@ -64,6 +66,8 @@ def test_opts_record_roundtrip_preserves_everything():
     assert back.cam_spec.intake_dur_050 == 224
     assert back.cam_points.klass == opts.cam_points.klass
     assert back.profile.block == "alum" and back.profile.compression == 10.5
+    assert back.profile.engine == "Chevy LS1 5.7 (aluminum)"
+    assert back.profile.mods == ["Ported heads", "Turbo"]
 
 
 def test_record_to_opts_handles_minimal_record():

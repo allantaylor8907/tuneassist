@@ -56,8 +56,10 @@ tunable state.
 - `cams.py` — optional cam specs → conservative idle/timing starting points
   (DESIGN §11). Classify stock/mild/big; starting-point guidance only. Tested.
 - `profile.py` — optional engine profile (block material, compression, power
-  adder) → tailored spark ceiling + "pull timing back when…" checklist. Feeds
-  `spark.analyze_spark(profile=…)`. Iron/low-CR vs alum/high-CR diverge here. Tested.
+  adder, mods) → tailored spark ceiling + "pull timing back when…" checklist.
+  Feeds `spark.analyze_spark(profile=…)`. Iron/low-CR vs alum/high-CR diverge here.
+  `ENGINE_PRESETS` (Chevy LS/SBC/BBC, Ford, Pontiac) + `COMMON_MODS` +
+  `preset_to_profile()` drive the TUI's pick-an-engine setup. Tested.
 - `stages.py` — the tuning *journey* state machine (pure logic, tested):
   `summarize()` digests an analysis Result, `determine_stage()` maps
   (triage + digest) → journey stage, `prescribe()` → the concrete next move

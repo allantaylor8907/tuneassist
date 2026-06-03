@@ -178,6 +178,36 @@ def test_theme_defaults_and_cycles_and_persists():
     asyncio.run(go())
 
 
+def test_setup_engine_preset_mods_and_cam_tier():
+    from textual.widgets import Select, Checkbox
+    from tuneassist.profile import COMMON_MODS
+    async def go():
+        with tempfile.TemporaryDirectory() as d:
+            gp = os.path.join(d, "g.json")
+            app = TuneAssistApp(garage_path=gp)
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                _press(app.screen, "new"); await pilot.pause()
+                s = app.screen
+                s.query_one("#name", Input).value = "boosted ls1"
+                s.query_one("#engine", Select).value = "Chevy LS1 5.7 (aluminum)"
+                s.query_one(f"#mod{COMMON_MODS.index('Ported heads')}", Checkbox).value = True
+                s.query_one(f"#mod{COMMON_MODS.index('Turbo')}", Checkbox).value = True
+                s.query_one("#cam", Select).value = "mild"
+                _press(s, "save"); await pilot.pause()
+                p = app.opts.profile
+                assert p.engine == "Chevy LS1 5.7 (aluminum)"
+                assert p.block == "alum" and p.compression == 10.1
+                assert "Ported heads" in p.mods and "Turbo" in p.mods
+                assert p.power_adder == "boost"            # Turbo derived the adder
+                assert app.opts.cam_points.klass == "mild"
+            # persisted with engine + mods
+            rec = garage.get(garage.load(gp), "boosted ls1")
+            assert rec["profile"]["engine"] == "Chevy LS1 5.7 (aluminum)"
+            assert "Turbo" in rec["profile"]["mods"]
+    asyncio.run(go())
+
+
 def test_build_report_renders_without_error():
     from rich.console import Console
     cr = analyze_log(RIDE, SessionOpts(cfg=Config(), tune_spark=True))
