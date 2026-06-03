@@ -21,6 +21,7 @@ from .engine_gm import (Config, load_log, resolve_columns, normalize_map_to_kpa,
 from .triage import triage
 from . import holley
 from . import stages
+from . import diagnostics
 from .spark import analyze_spark
 
 
@@ -159,6 +160,7 @@ class CoreResult:
     maf: tuple = (None, None, [])          # (Series|None, Series|None, notes)
     prescription: object = None            # stages.Prescription
     empty_reason: str | None = None
+    findings: list = field(default_factory=list)   # diagnostics.Finding list
     notes: list = field(default_factory=list)
 
     @property
@@ -214,6 +216,19 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
             except Exception as e:   # pragma: no cover - defensive
                 notes.append(f"Spark analysis skipped: {e}")
 
+    # Pattern-based diagnosis (symptom -> cause -> correction). Runs on any
+    # running log; normalize Holley channel names to the canonical keys first.
+    findings = []
+    if tr.can_correct:
+        dcol = dict(col)
+        for canon, alias in (("afr_cmd", "afr_target"), ("ect", "cts"), ("iat", "mat")):
+            if canon not in dcol and alias in col:
+                dcol[canon] = col[alias]
+        try:
+            findings = diagnostics.diagnose(df, dcol, cfg)
+        except Exception as e:   # pragma: no cover - defensive
+            notes.append(f"Diagnostics skipped: {e}")
+
     spark_has_work = bool(spark and spark.can_run and
                           (spark.knock_cells or (spark.action is not None and
                            (spark.action.stack() == "ADD").any())))
@@ -235,7 +250,7 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
 
     return CoreResult(platform=platform, triage=tr, stage=stage, summary=summary,
                       result=result, spark=spark, maf=maf, prescription=rx,
-                      empty_reason=empty_reason, notes=notes)
+                      empty_reason=empty_reason, findings=findings, notes=notes)
 
 
 # --------------------------------------------------------------------------
@@ -287,6 +302,7 @@ def result_to_dict(cr: CoreResult) -> dict:
         },
         "notes": list(cr.notes),
         "empty_reason": cr.empty_reason,
+        "findings": [f.to_dict() for f in cr.findings],
     }
 
     res = cr.result

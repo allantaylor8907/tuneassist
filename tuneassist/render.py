@@ -65,6 +65,10 @@ def safety_panel(events):
     _print(panels.build_safety(events))
 
 
+def diagnostics_panel(findings):
+    _print(panels.build_diagnostics(findings))
+
+
 def prescription_panel(rx):
     _print(panels.build_prescription(rx))
 

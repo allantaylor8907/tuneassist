@@ -171,7 +171,91 @@ classify the cam (stock/mild/big) and emit conservative starting numbers with a
 loud "verify with a knock-logged pull" caveat. We never target a cam-derived
 number without knock confirmation.
 
+## 12. Diagnostic catalog — symptom → cause → correction (`diagnostics.py`)
+The correction math (VE/MAF/spark) answers "how far off is each cell." This
+catalog answers the *diagnosis* question a good tuner asks: given the **pattern**
+of what the log shows, what's the likely **root cause**, and what do you actually
+**change** — including where there's free power. Each detector degrades
+gracefully (skips itself if its channels aren't logged) and reports a confidence.
+
+Severity: `critical` (engine at risk — surface first), `warning` (drivability /
+tune quality), `opportunity` (free power / refinement), `info`.
+
+### Fuel & trims
+- **Lean cruise** (mean STFT+LTFT > +`lean_trim`%, broadly): airflow model
+  under-reads. Causes, ranked: VE/MAF too low (→ apply the correction grid);
+  **vacuum leak** (suspect when idle/low-load trim ≫ cruise trim — unmetered air);
+  injector data / dead-time low; failing fuel pump if it worsens with load;
+  MAF placement/leak after the sensor.
+- **Rich cruise** (mean trim < −`rich_trim`%): airflow over-reads. Causes:
+  VE/MAF too high; leaking/oversized injector; fuel pressure high; contaminated
+  MAF reading high; wrong injector scaling.
+- **Bank imbalance** (|trim_b1 − trim_b2| > `bank_split`%): one-bank problem —
+  injector(s) on that bank, a single bad O2, an exhaust leak upstream of one
+  sensor (false-lean → adds fuel), or an intake/vacuum leak feeding one bank.
+- **Idle-only lean** (idle STFT high-positive, cruise normal): classic
+  **vacuum leak** — unmetered air is a big % of airflow at idle, negligible at
+  cruise. → smoke-test intake, PCV, brake booster, injector o-rings.
+- **Trim oscillation** (high STFT variance): O2 wiring/heater, exhaust leak near
+  sensor, or closed-loop gains too aggressive.
+
+### O2 / wideband
+- **Wideband disagrees with commanded in closed loop** (>`o2_suspect`%, see §4):
+  narrowband bias, exhaust leak at the NB sensor, or **fuel-content/stoich
+  mismatch** (running E-blend on a gasoline stoich, or vice-versa). The ECM
+  trims to a lying sensor → resolve the sensor/stoich BEFORE chasing airflow.
+- **Wideband pegged** (stuck ~max lean/rich): sensor fault or free-air calibration
+  drift — don't tune off it until verified.
+
+### MAF-specific
+- **MAF vs SD divergence**: with VE correct, MAF airmass should track SD airmass.
+  Persistent gap → MAF curve wrong, contamination (oiled filter → reads low →
+  false lean), a leak between MAF and throttle, or bad sensor placement/tubing.
+- **MAF spikes/dropouts**: reversion (big cam, no screen), wiring, or sensor.
+
+### Spark / knock  (detail in §10, summarized here as findings)
+- **Knock under load**: too much advance, lean AFR, high IAT, low octane, or
+  carbon/hot-spot. Pull timing there (+margin); fix lean/IAT root cause first.
+- **Knock only when heat-soaked**: cooling + IAT-based spark retard; iron blocks
+  especially (§11). **Cruise/light-load knock**: over-aggressive economy timing.
+
+### Idle & drivability
+- **Hunting idle** (see triage): vacuum leak (lean hunt), IAC range/min-air,
+  idle spark-vs-rpm correction too strong, or loading up rich.
+- **High/low idle**: throttle stop / IAC min air-flow / idle airflow target.
+- **Tip-in stumble**: accel-enrichment too low or MAF transient lag (SD fill).
+- **Decel popping**: too much decel fuel or an exhaust leak with lean decel;
+  check decel fuel cutoff.
+- **Steady-cruise surge**: cruise too lean (economy), torque management, or
+  closed-loop oscillation.
+
+### Cooling / charge temp
+- **Overheat** (ECT > `ect_hot`): cooling/fan tables, or a lean/over-advanced
+  tune making heat. **High IAT** (> `iat_hot`): heat-soak/intake — knock risk,
+  density loss; ensure IAT spark comp is active.
+
+### Fuel-system limits
+- **Injector duty maxed** (duty > `inj_duty_max`%, duty ≈ PW_ms·RPM/1200):
+  injectors undersized or fuel pressure dropping → out of fuel up top. Bigger
+  injectors / pump / regulator before leaning anything at WOT.
+
+### Squeezing power (opportunity findings)
+- **WOT richer than needed**: measured WOT AFR well rich of a safe NA target
+  (~12.5–12.8 pump, ~11.8–12.2 boost) leaves power on the table → lean the PE
+  target toward optimal **cautiously, knock-watched**. Too-rich also washes oil.
+- **Timing headroom**: WOT, knock ≈ 0, timing below the §10 advisory band → room
+  to add small increments toward MBT (defer to the spark "find power" path).
+- **Torque management** (GM): factory pulls timing/throttle in gear; if a
+  torque-management channel shows reduction without knock, easing it recovers
+  power (advanced users; note, don't auto-apply).
+- **PE enable too conservative**: power enrichment that comes in late/high-TPS
+  loses transitional power; commanded-AFR enrichment point can be brought in.
+
+Thresholds live in `DiagnosticConfig`. Findings are advisory and ranked; the
+critical/safety ones (WOT lean, injector maxed, overheat, knock) sort to the top.
+
 ## Open ideas
 - Multi-pass convergence tracking persisted to disk (survives across runs).
 - LT (Gen 5, DI) airflow + Holley LT later — different airflow model, deferred.
 - EGT / fuel-pressure cross-checks for the lean-vs-airflow root-cause split.
+- Drivability detectors that need transient analysis (tip-in stumble, decel pop).

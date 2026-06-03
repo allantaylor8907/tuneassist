@@ -231,6 +231,7 @@ def _run_one(io: WizardIO, path: str, platform: str, opts: SessionOpts,
 
     render.journey_bar(cr.stage)
     render.triage_panel(cr.triage, cr.platform)
+    render.diagnostics_panel(cr.findings)
 
     res = cr.result
     if res is not None and not cr.has_grid:

@@ -43,6 +43,11 @@ tunable state.
 - `spark.py` — knock-governed timing analysis (DESIGN §10). Refuses without a knock
   channel; PULLs on knock (+margin), cautious opt-in ADDs for power; flags LEAN/HOT
   root causes. Tested.
+- `diagnostics.py` — **pattern-based symptom→cause→correction engine** (DESIGN
+  §12). `diagnose(df, col, cfg) → [Finding]`: lean/rich cruise, vacuum leak, bank
+  imbalance, WB-vs-NB, WOT lean (critical) / rich (opportunity), injector duty,
+  knock, temps, trim oscillation. Each detector degrades if channels absent;
+  findings ranked critical→info. Strings are ASCII (safe for `--json`). Tested.
 - `cams.py` — optional cam specs → conservative idle/timing starting points
   (DESIGN §11). Classify stock/mild/big; starting-point guidance only. Tested.
 - `profile.py` — optional engine profile (block material, compression, power

@@ -254,10 +254,43 @@ def build_prescription(rx):
                  title_align="left", padding=(1, 2))
 
 
+SEVERITY_STYLE = {"critical": ("bold red", "[!]"), "warning": ("yellow", "[!]"),
+                  "opportunity": ("bright_green", "[+]"), "info": ("grey70", "[i]")}
+
+
+def build_diagnostics(findings):
+    """A ranked symptom→cause→correction panel from diagnostics.Finding list."""
+    if not findings:
+        return None
+    blocks = []
+    for f in findings:
+        style, mark = SEVERITY_STYLE.get(f.severity, ("white", "•"))
+        head = Text()
+        head.append(f"{mark} ", style=style)
+        head.append(f.title, style=f"bold {style}")
+        head.append(f"   [{f.severity}·{f.confidence}]", style="grey50")
+        lines = [head, Text(f"   {f.detail}", style="white")]
+        if f.causes:
+            lines.append(Text("   likely: ", style="grey62") +
+                         Text("; ".join(f.causes), style="grey74"))
+        for c in f.corrections:
+            lines.append(Text.from_markup(f"   [bold {style}]>[/] {c}"))
+        blocks.append(Group(*lines))
+        blocks.append(Text(""))
+    if blocks and isinstance(blocks[-1], Text):
+        blocks.pop()
+    return Panel(Group(*blocks), box=box.ROUNDED, border_style="cyan",
+                 title="[bold]DIAGNOSIS — what I see & what to change[/]",
+                 title_align="left", padding=(1, 1))
+
+
 def build_report(cr, history=None, show_spark=False):
     """Assemble a full result view (Group) from a core.CoreResult. Shared by the
     Textual UI; mirrors the wizard's section order."""
     parts = [build_triage(cr.triage, cr.platform)]
+    diag = build_diagnostics(getattr(cr, "findings", None))
+    if diag is not None:
+        parts.append(diag)
     res = cr.result
     if res is not None and not cr.has_grid:
         for n in getattr(res, "notes", []):

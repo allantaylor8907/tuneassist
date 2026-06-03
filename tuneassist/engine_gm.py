@@ -85,6 +85,8 @@ CHANNEL_PATTERNS = {
                     r"air.?flow.*sensor", r"\bmaf\b"],
     "sd_air":      [r"dyn.*air", r"sd.*air", r"calc.*air.*mass", r"cylinder.*air"],
     "torque":      [r"engine.*torque", r"\btorque\b", r"\btq\b"],
+    "injpw":       [r"inj.*pulse.*width", r"inj.*pw\b", r"\bipw\b"],
+    "duty":        [r"inj.*duty", r"duty.*cycle", r"\bidc\b"],
 }
 
 
