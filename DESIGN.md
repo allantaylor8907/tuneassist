@@ -196,9 +196,14 @@ tune quality), `opportunity` (free power / refinement), `info`.
 - **Bank imbalance** (|trim_b1 − trim_b2| > `bank_split`%): one-bank problem —
   injector(s) on that bank, a single bad O2, an exhaust leak upstream of one
   sensor (false-lean → adds fuel), or an intake/vacuum leak feeding one bank.
-- **Idle-only lean** (idle STFT high-positive, cruise normal): classic
-  **vacuum leak** — unmetered air is a big % of airflow at idle, negligible at
-  cruise. → smoke-test intake, PCV, brake booster, injector o-rings.
+- **Vacuum leak** (common on swaps): a leak is a *fixed* amount of unmetered air,
+  so its fueling effect is a large % at idle (low airflow) and **tapers as airflow
+  rises**. The detector flags a high idle fuel-add (STFT+LTFT on GM, CL-comp+Learn
+  on Holley) that exceeds the cruise add by `vac_idle_delta`. Corroboration raises
+  confidence: a **lean idle AFR** (leak past trim authority) → high; a known **big
+  cam** can mimic the idle signature (reversion/dilution) → confidence dropped to
+  low with a "smoke-test to confirm" note. Fix the leak (intake/TB gasket, PCV,
+  booster hose, injector o-rings) BEFORE tuning idle — never "tune out" a leak.
 - **Trim oscillation** (high STFT variance): O2 wiring/heater, exhaust leak near
   sensor, or closed-loop gains too aggressive.
 

@@ -46,16 +46,59 @@ def test_bank_imbalance():
     assert "BANK_IMBALANCE" in _ids(_diag(df))
 
 
-def test_vacuum_leak_idle_only():
-    n = 800
-    rpm = np.r_[np.full(400, 850.0), np.full(400, 2200.0)]   # idle then cruise
-    tps = np.r_[np.full(400, 3.0), np.full(400, 25.0)]
-    mapk = np.r_[np.full(400, 35.0), np.full(400, 50.0)]
-    df = pd.DataFrame({"Engine RPM": rpm, "MAP": mapk, "Throttle Position": tps,
-                       "Coolant Temp": np.full(n, 195.0),
-                       "Short Term Fuel Trim Bank 1": np.r_[np.full(400, 14.0), np.full(400, 3.0)],
-                       "Long Term Fuel Trim Bank 1": np.zeros(n)})
-    ids = _ids(_diag(df))
+def _leak_log(idle_trim=14.0, cruise_trim=2.0, idle_afr=14.7, n=900):
+    """Idle band (~820 rpm), light cruise (~2100), mid (~2600)."""
+    rpm = np.r_[np.full(300, 820.0), np.full(300, 2100.0), np.full(300, 2600.0)]
+    mapk = np.r_[np.full(300, 42.0), np.full(300, 45.0), np.full(300, 62.0)]
+    tps = np.r_[np.full(300, 4.0), np.full(300, 22.0), np.full(300, 40.0)]
+    trim = np.r_[np.full(300, idle_trim), np.full(300, cruise_trim), np.full(300, cruise_trim - 1)]
+    return pd.DataFrame({
+        "Engine RPM": rpm, "MAP": mapk, "Throttle Position": tps,
+        "Coolant Temp": np.full(n, 195.0),
+        "Short Term Fuel Trim Bank 1": trim, "Long Term Fuel Trim Bank 1": np.zeros(n),
+        "Wideband AFR": np.r_[np.full(300, idle_afr), np.full(600, 14.7)]})
+
+
+def test_vacuum_leak_tapers_with_load():
+    # high idle add that tapers as airflow rises = leak signature
+    assert "VACUUM_LEAK" in _ids(_diag(_leak_log(idle_trim=14, cruise_trim=2)))
+
+
+def test_vacuum_leak_lean_idle_is_high_confidence():
+    f = [x for x in _diag(_leak_log(idle_trim=18, cruise_trim=3, idle_afr=15.8))
+         if x.id == "VACUUM_LEAK"]
+    assert f and f[0].confidence == "high"
+
+
+def test_no_taper_is_not_a_leak():
+    # uniformly lean (idle ≈ cruise) is a VE/scaling issue, not a leak
+    assert "VACUUM_LEAK" not in _ids(_diag(_leak_log(idle_trim=9, cruise_trim=8)))
+
+
+def test_uniform_rich_is_not_a_leak():
+    assert "VACUUM_LEAK" not in _ids(_diag(_leak_log(idle_trim=-8, cruise_trim=-8)))
+
+
+def test_big_cam_softens_leak_confidence():
+    from tuneassist.diagnostics import diagnose
+    df = _leak_log(idle_trim=14, cruise_trim=2)
+    f = [x for x in diagnose(df, resolve_columns(df), Config(), cam_class="big")
+         if x.id == "VACUUM_LEAK"]
+    assert f and f[0].confidence == "low"
+    assert any("cam" in c.lower() for c in f[0].causes)
+
+
+def test_vacuum_leak_detected_on_holley_clcomp():
+    from tuneassist import holley
+    from tuneassist.diagnostics import diagnose
+    n = 900
+    rpm = np.r_[np.full(300, 820.0), np.full(300, 2100.0), np.full(300, 2600.0)]
+    mapk = np.r_[np.full(300, 42.0), np.full(300, 45.0), np.full(300, 62.0)]
+    tps = np.r_[np.full(300, 4.0), np.full(300, 22.0), np.full(300, 40.0)]
+    df = pd.DataFrame({"RPM": rpm, "MAP": mapk, "TPS": tps, "CTS": np.full(n, 195.0),
+                       "CL Comp": np.r_[np.full(300, 13.0), np.full(600, 2.0)],
+                       "Current Learn": np.zeros(n), "AFR": np.full(n, 14.0)})
+    ids = {f.id for f in diagnose(df, holley.resolve_holley(df), Config(), platform="holley")}
     assert "VACUUM_LEAK" in ids
 
 

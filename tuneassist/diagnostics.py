@@ -22,7 +22,9 @@ SEVERITY_RANK = {"critical": 0, "warning": 1, "opportunity": 2, "info": 3}
 class DiagnosticConfig:
     lean_trim: float = 6.0        # mean cruise total-trim % above this = lean
     rich_trim: float = 6.0        # below -this = rich
-    idle_lean_trim: float = 9.0   # idle total-trim % above this w/ ok cruise = leak
+    idle_lean_trim: float = 8.0   # idle fuel-add % above this is suspicious
+    vac_idle_delta: float = 5.0   # idle add must exceed cruise add by this (tapers w/ load)
+    vac_idle_afr_lean: float = 15.3  # idle wideband leaner than this corroborates a leak
     bank_split: float = 5.0       # |bank1 - bank2| trim % = one-bank fault
     trim_osc_std: float = 8.0     # STFT std above this = oscillation/instability
     o2_suspect: float = 4.0       # wideband vs commanded gap % (closed loop)
@@ -82,6 +84,20 @@ def _total_trim(df, col):
     s = df[st].apply(pd.to_numeric, errors="coerce").mean(axis=1).fillna(0)
     l = df[lt].apply(pd.to_numeric, errors="coerce").mean(axis=1).fillna(0)
     return s + l
+
+
+def _applied_correction(df, col):
+    """The % fuel the system added/removed: STFT+LTFT (GM) or CL-comp+Learn
+    (Holley). Positive = adding fuel. Works cross-platform for the leak detector."""
+    t = _total_trim(df, col)
+    if t is not None:
+        return t
+    comp = _num(df, col, "cl_comp")
+    learn = _num(df, col, "learn")
+    if comp is None and learn is None:
+        return None
+    return ((comp.fillna(0) if comp is not None else 0)
+            + (learn.fillna(0) if learn is not None else 0))
 
 
 def _duty(df, col):
@@ -144,27 +160,72 @@ def _idle_trim(df, col, trim, warm):
     return float(vals.mean()) if len(vals) > 20 else None
 
 
-def _d_idle_vacuum_leak(df, col, cfg, dc, warm):
-    trim = _total_trim(df, col)
-    if trim is None:
-        return None
-    idle = _idle_trim(df, col, trim, warm)
+def _d_vacuum_leak(df, col, cfg, dc, warm, cam_class=None):
+    """Vacuum leak = a fixed amount of UNMETERED air. Its fueling effect is a big
+    % at idle (low airflow) and shrinks as airflow rises -- so the tell is a
+    high idle fuel-add that TAPERS with load. Corroborate with a lean idle AFR
+    (the leak exceeds trim authority) and, on Holley, a low IAC at high idle.
+    A big cam can mimic this (reversion/dilution), so we soften confidence then.
+    Works on GM (trims) and Holley (CL-comp + Learn)."""
+    corr = _applied_correction(df, col)
+    rpm = _num(df, col, "rpm")
     mapk = _num(df, col, "map")
-    cruise = warm & (mapk < dc.wot_map_min) if mapk is not None else warm
-    cvals = trim[cruise].dropna()
-    if idle is None or len(cvals) < 30:
+    if corr is None or rpm is None or mapk is None:
         return None
-    cruise_mean = float(cvals.mean())
-    if idle > dc.idle_lean_trim and idle - cruise_mean > 5:
-        return Finding("VACUUM_LEAK", "warning", "Vacuum leak suspected",
-                       f"Idle fuel trim is {idle:+.1f}% but cruise is only "
-                       f"{cruise_mean:+.1f}% - unmetered air dominates at idle.",
-                       ["intake/manifold gasket or vacuum line leak",
-                        "PCV / brake-booster hose", "injector o-rings", "throttle-body gasket"],
-                       ["Smoke-test the intake; fix the leak before idle VE work.",
-                        "Don't 'tune out' a leak by raising idle VE - re-log after the fix."],
-                       "medium")
-    return None
+    tps = _num(df, col, "tps")
+
+    idle = warm & (rpm > 500) & (rpm < 1100)
+    if tps is not None:
+        idle &= tps < 8
+    # cruise bands gated above idle RPM so idle samples don't dilute the reference
+    light = warm & (mapk >= 35) & (mapk < 55) & (rpm > 1300)
+    mid = warm & (mapk >= 55) & (mapk < dc.wot_map_min) & (rpm > 1300)
+
+    def avg(m, n=15):
+        v = corr[m].dropna()
+        return float(v.mean()) if len(v) >= n else None
+
+    it = avg(idle)
+    if it is None or it < dc.idle_lean_trim:
+        return None
+    cruise_ref = avg(light)
+    if cruise_ref is None:
+        cruise_ref = avg(mid)
+    if cruise_ref is None:
+        return None
+    taper = it - cruise_ref
+    if taper < dc.vac_idle_delta:
+        return None                                  # doesn't taper -> not a leak
+
+    # Corroboration ----------------------------------------------------------
+    conf, extra_cause, lead = "medium", [], ""
+    afr = _num(df, col, "afr_actual")
+    if afr is not None:
+        ia = afr[idle].dropna()
+        if len(ia) > 10 and float(ia.median()) > dc.vac_idle_afr_lean:
+            conf = "high"
+            lead = (f" Idle is also running lean (~{float(ia.median()):.1f} AFR) even "
+                    "with fuel added - the leak is past what trims can hide.")
+    # big cam can mimic the idle signature
+    if cam_class == "big":
+        conf = "low"
+        extra_cause.append("(note: a big cam can mimic this via idle reversion/"
+                            "dilution - verify with a smoke test)")
+
+    sev = "warning"
+    causes = ["intake-manifold or throttle-body gasket leak",
+              "vacuum line / PCV / brake-booster hose",
+              "injector o-rings", "leaking intake at a runner"]
+    causes += extra_cause
+    return Finding(
+        "VACUUM_LEAK", sev, "Vacuum leak suspected",
+        f"Idle is adding {it:+.0f}% fuel but cruise only {cruise_ref:+.0f}% - "
+        f"that taper with airflow is the classic unmetered-air signature.{lead}",
+        causes,
+        ["Smoke-test the intake (and PCV/booster lines); fix the leak FIRST.",
+         "Don't 'tune out' a leak by raising idle fuel/VE - re-log after the repair.",
+         "On a fresh swap, re-check manifold bolts/gaskets and the throttle-body seal."],
+        conf)
 
 
 def _d_bank_imbalance(df, col, cfg, dc, warm):
@@ -492,9 +553,9 @@ def _boost_findings(df, col, cfg, dc, warm, profile):
     return out
 
 
-_DETECTORS = [_d_cruise_trim, _d_idle_vacuum_leak, _d_bank_imbalance,
-              _d_wb_vs_commanded, _d_wot_fueling, _d_injector_duty, _d_knock,
-              _d_temps, _d_trim_oscillation]
+_DETECTORS = [_d_cruise_trim, _d_bank_imbalance, _d_wb_vs_commanded,
+              _d_wot_fueling, _d_injector_duty, _d_knock, _d_temps,
+              _d_trim_oscillation]
 
 
 # Detectors that only make sense on the GM/HPTuners model (the wideband is
@@ -505,7 +566,7 @@ _PLATFORM_SKIP = {"holley": {"WB_VS_NB"}}
 
 
 def diagnose(df: pd.DataFrame, col: dict, cfg, dc: DiagnosticConfig | None = None,
-             platform: str = "gm", profile=None) -> list:
+             platform: str = "gm", profile=None, cam_class=None) -> list:
     """Run all detectors and return Findings sorted by severity then confidence."""
     dc = dc or DiagnosticConfig()
     warm = _warm_mask(df, col, getattr(cfg, "ect_min_f", 160.0))
@@ -521,6 +582,13 @@ def diagnose(df: pd.DataFrame, col: dict, cfg, dc: DiagnosticConfig | None = Non
         for f in (r if isinstance(r, list) else [r]):
             if f.id not in skip:
                 findings.append(f)
+    # context-aware detectors (need cam / profile)
+    try:
+        vl = _d_vacuum_leak(df, col, cfg, dc, warm, cam_class)
+        if vl is not None and vl.id not in skip:
+            findings.append(vl)
+    except Exception:        # pragma: no cover - defensive
+        pass
     try:
         findings.extend(_boost_findings(df, col, cfg, dc, warm, profile))
     except Exception:        # pragma: no cover - defensive

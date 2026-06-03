@@ -224,9 +224,10 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
         for canon, alias in (("afr_cmd", "afr_target"), ("ect", "cts"), ("iat", "mat")):
             if canon not in dcol and alias in col:
                 dcol[canon] = col[alias]
+        cam_class = getattr(opts.cam_points, "klass", None)
         try:
             findings = diagnostics.diagnose(df, dcol, cfg, platform=platform,
-                                            profile=opts.profile)
+                                            profile=opts.profile, cam_class=cam_class)
         except Exception as e:   # pragma: no cover - defensive
             notes.append(f"Diagnostics skipped: {e}")
 
