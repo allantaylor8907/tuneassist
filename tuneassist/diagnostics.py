@@ -584,7 +584,12 @@ def _boost_findings(df, col, cfg, dc, warm, profile):
         f"Peak manifold pressure ~{int(peak_map)} kPa (~{psi(peak_map):.1f} psi of "
         "boost). Boost cells are open-loop and unforgiving - fuel and timing margins "
         "matter most here.",
-        [], [], "high"))
+        [],
+        ["Sneak up on boost: start at wastegate spring pressure, ramp only to ~2/3 "
+         "redline, then raise boost in ~20 kPa (3 psi) steps.",
+         "Add fuel and pull timing as boost climbs (~+2% fuel per 20 kPa to start). "
+         "Never chase a detonation spiral -- if knock shows, back off boost/timing first."],
+        "high"))
 
     # Lean under boost = the fastest way to melt a piston.
     act = _num(df, col, "afr_actual")
@@ -725,7 +730,8 @@ def _coldstart_findings(df, col, cfg, dc):
                 "ENRICH_NOT_DECAYED", "warning",
                 f"{label.title()} enrichment still active when warm",
                 f"{label.title()} enrichment is still {disp} with the engine warm - "
-                "it should have tapered back to neutral.",
+                "it should have tapered back to neutral (post-start fuel should be gone "
+                "within ~30s of starting; warmup fuel by operating temp).",
                 [f"{label} enrichment-vs-temp curve doesn't decay by operating temp"],
                 [f"Taper the {label} enrichment to neutral by operating temp so warm "
                  "fueling is just the base/learned table."], "high"))

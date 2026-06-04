@@ -278,7 +278,9 @@ tune quality), `opportunity` (free power / refinement), `info`.
 - **Warmup rich / lean**: while warming (ECT between ~90 °F and operating temp),
   wideband AFR richer than `warmup_rich_afr` (loads up / fouls / washes bores) or
   leaner than `warmup_lean_afr` (cold stumble/stall) → trim the coolant/afterstart
-  enrichment-vs-temp curve.
+  enrichment-vs-temp curve. Reference (HP Academy): cold wants only mild
+  enrichment — ~λ0.95 (~14 AFR pump) at moderate cold, richer when truly cold;
+  cranking fuel is set below ~300–400 RPM and isn't wideband-tunable.
 - **Enrichment not decayed**: afterstart/coolant enrichment still elevated when
   warm. We detect the channel's *neutral baseline* (0 = none, or 100 % = neutral
   on Holley) so a settled 100 % is NOT flagged — only a real elevation above
@@ -336,7 +338,10 @@ unforgiving** — fuel and timing margin matter most here.
 - **Hot charge under boost** (IAT > `boost_iat_hot`): weak/heat-soaked intercooler
   — steals power and invites knock. → improve charge cooling; lean on IAT retard.
 Spark under boost is far more conservative than NA (§10: ~10–18°, less with more
-boost; pull timing as boost/IAT rise).
+boost; pull timing as boost/IAT rise). Procedure (HP Academy): start at wastegate
+spring pressure, steady-state tune, do conservative ramp runs to ~2/3 redline,
+then raise boost in ~20 kPa (3 psi) steps adding ~+2 % fuel per 20 kPa and pulling
+timing — never chase a detonation spiral.
 
 ### Squeezing power (opportunity findings)
 - **WOT richer than needed**: measured WOT AFR well rich of a safe NA target
@@ -349,6 +354,11 @@ boost; pull timing as boost/IAT rise).
   power (advanced users; note, don't auto-apply).
 - **PE enable too conservative**: power enrichment that comes in late/high-TPS
   loses transitional power; commanded-AFR enrichment point can be brought in.
+- **Lean cruise for economy** (opportunity, not auto-flagged — performance focus):
+  HP Academy/GM — steady light-load cruise can run ~15.5:1 for a small mpg gain
+  (port-injection misfire limit ~16:1); the factory LS1 PCM hides a lean-cruise
+  mode. Risks: surge and knock, so it's user-opt-in territory, not a default
+  recommendation here.
 
 Thresholds live in `DiagnosticConfig`. Findings are advisory and ranked; the
 critical/safety ones (WOT lean, injector maxed, overheat, knock) sort to the top.
