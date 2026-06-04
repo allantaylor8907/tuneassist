@@ -271,6 +271,21 @@ tune quality), `opportunity` (free power / refinement), `info`.
 - **Knock only when heat-soaked**: cooling + IAT-based spark retard; iron blocks
   especially (§11). **Cruise/light-load knock**: over-aggressive economy timing.
 
+### Startup flare / idle settle (`_startup_findings`, runs on the FULL log)
+From the RPM trace, only when a *real* start is captured (engine cranks from off,
+then catches — a mid-drive log with no start is skipped, so we never cry "startup
+emergency" on a drive log). Metrics: flare peak, settled idle, overshoot %, settle
+time, early-RPM oscillation. Flags a too-high flare (reduce cranking/startup
+airflow in the initial window) and/or a slow settle (speed up the startup-airflow
+decay). Ranked **warning/info — never critical** (it's drivability, not engine
+risk); points at the Cranking Airflow + Startup Airflow Decay tables.
+
+### Exact table naming (`tables.py`, `core._name_tables`)
+Every recommended change names the **exact vendor table** to edit — "Main VE table
+(Engine > Airflow > Volumetric Efficiency)" on HP Tuners, "Base Fuel table" on
+Holley, the "High Octane spark table", "Power Enrichment", "injector flow-rate",
+etc. We name the table (stable, searchable), not a version-specific menu path.
+
 ### Cold start & warmup (`_coldstart_findings`, runs on the FULL log)
 - **Never reached operating temp**: over a long log (`warmup_min_duration_s`)
   coolant stays below `thermostat_min_f` → stuck-open/missing/wrong thermostat;

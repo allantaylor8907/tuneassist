@@ -51,6 +51,11 @@ class DiagnosticConfig:
     thermostat_min_f: float = 170.0 # should exceed this on a long drive
     warmup_min_duration_s: float = 240.0  # only judge "never warmed" over a long log
     ase_warm_pct: float = 2.0       # afterstart/warmup enrichment still active when warm
+    # --- startup flare / idle settle ---
+    startup_overshoot_pct: float = 55.0   # flare peak over settled idle (%) above this
+    startup_overshoot_rpm: float = 600.0  # or absolute overshoot RPM above this
+    startup_settle_s: float = 6.0         # time to settle to idle above this = slow
+    startup_osc_std: float = 200.0        # RPM std during the flare above this = unstable
     # --- idle quality ---
     idle_hunt_std: float = 90.0     # trimmed idle-RPM std above this = hunting/surging
     idle_rpm_tol: float = 150.0     # actual vs target idle RPM gap that matters
@@ -657,6 +662,68 @@ def _boost_findings(df, col, cfg, dc, warm, profile):
     return out
 
 
+def _startup_findings(df, col, cfg, dc, platform="gm"):
+    """Startup flare / idle-settle from the RPM trace. Detects a *real* start
+    (engine cranks from off, then catches) -- a mid-drive log with no start is
+    skipped (so we don't cry 'startup emergency' on a drive log like some tools do).
+    These are drivability findings, ranked warning/info -- never 'critical'."""
+    from .tables import table
+    rpm = _num(df, col, "rpm")
+    t = _num(df, col, "time")
+    if rpm is None or t is None or len(rpm) < 50:
+        return []
+    rpm = rpm.reset_index(drop=True)
+    t = t.reset_index(drop=True)
+    # Require the log to START with the engine off/cranking; else there's no start.
+    if not bool((rpm.iloc[:25] < 400).any()):
+        return []
+    caught = rpm[rpm > 550]
+    if caught.empty:
+        return []
+    ci = caught.index[0]
+    t0 = float(t.iloc[ci])
+    seg = (t >= t0) & (t < t0 + 25)
+    if int(seg.sum()) < 40:
+        return []
+    flare = seg & (t < t0 + 10)
+    peak = float(rpm[flare].max())
+    settle_win = seg & (t >= t0 + 12)
+    settled = (float(rpm[settle_win].median()) if int(settle_win.sum()) > 20
+               else float(rpm[seg].quantile(0.3)))
+    if settled < 400 or peak < settled:
+        return []
+    overshoot = peak - settled
+    pct = overshoot / settled * 100.0
+    osc = float(rpm[seg & (t < t0 + 8)].std() or 0)
+    within = seg & (t >= t0 + 1) & (rpm <= settled + 150)
+    settle_time = float(t[within].min() - t0) if within.any() else 25.0
+
+    flared = pct > dc.startup_overshoot_pct or overshoot > dc.startup_overshoot_rpm
+    slow = settle_time > dc.startup_settle_s
+    unstable = osc > dc.startup_osc_std
+    if not (flared or slow or unstable):
+        return []
+
+    sa = table(platform, "startup_air")
+    corr = []
+    if flared:
+        corr.append(f"Reduce cranking/startup airflow in the initial flare window "
+                    f"(~10-15%) so the flare lands nearer idle -- the {sa}.")
+    if slow:
+        corr.append(f"Speed up the startup-airflow decay so RPM returns to target "
+                    f"within ~3s -- the {sa}.")
+    if unstable and not flared:
+        corr.append(f"Smooth the startup airflow/decay; the early RPM is bouncing -- the {sa}.")
+    corr.append("Re-log from key-on and confirm the flare settles cleanly to idle.")
+    sev = "warning" if (pct > 70 or settle_time > 8 or unstable) else "info"
+    return [Finding(
+        "STARTUP_FLARE", sev, "Startup idle flares / settles slowly",
+        f"On start, RPM flares to ~{peak:.0f} then settles to ~{settled:.0f} "
+        f"({pct:.0f}% overshoot) in ~{settle_time:.1f}s.",
+        ["cranking/startup airflow set high", "startup airflow decay too slow"],
+        corr, "high")]
+
+
 def _coldstart_findings(df, col, cfg, dc):
     """Cold-start / warmup analysis. Runs on the FULL log (not warm-masked) since
     the point is the cold portion. Degrades to nothing if the log is warm-only."""
@@ -890,6 +957,7 @@ def diagnose(df: pd.DataFrame, col: dict, cfg, dc: DiagnosticConfig | None = Non
     except Exception:        # pragma: no cover - defensive
         pass
     for group, args in ((_idle_findings, (df, col, cfg, dc, warm, cam_class)),
+                        (_startup_findings, (df, col, cfg, dc, platform)),
                         (_coldstart_findings, (df, col, cfg, dc)),
                         (_boost_findings, (df, col, cfg, dc, warm, profile))):
         try:

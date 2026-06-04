@@ -156,6 +156,20 @@ def test_mod_long_tubes_add_header_leak_to_bank_imbalance():
     assert any("exhaust leak" in c.lower() for c in bank.causes)
 
 
+def test_findings_name_exact_vendor_tables():
+    # GM: lead finding names the Main VE table; a finding names its table
+    cr = analyze_log(os.path.join(FIX, "ride42.csv"), _opts(tune_spark=True))
+    af = [f for f in cr.findings if f.id == "APPLY_FUEL"][0]
+    assert any("Main VE table" in c for c in af.corrections)
+    assert any("In your tune:" in c for f in cr.findings for c in f.corrections)
+
+
+def test_holley_finding_names_base_fuel_table():
+    cr = analyze_log(os.path.join(FIX, "sniper_sample.csv"), _opts())
+    af = [f for f in cr.findings if f.id == "APPLY_FUEL"][0]
+    assert any("Base Fuel table" in c for c in af.corrections)
+
+
 def test_cold_log_reports_blocker_not_grid():
     d = analyze_log(os.path.join(FIX, "jr42.csv"), _opts()).to_dict()
     assert d.get("empty_reason") and "operating temp" in d["empty_reason"]

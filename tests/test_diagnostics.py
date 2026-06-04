@@ -299,6 +299,40 @@ def test_enrichment_not_decayed_100_based_neutral():
     assert "ENRICH_NOT_DECAYED" in _ids(_diag(bad))
 
 
+# ---- startup flare / idle settle ----
+def _startup_log(peak=1800.0, settled=900.0, settle_s=10.0, n=2000):
+    t = np.arange(n) * 0.05
+    rpm = np.full(n, settled)
+    rpm[t < 5] = 0.0
+    rpm[(t >= 4.9) & (t < 5.0)] = 300.0
+    after = t >= 5.0
+    x = t[after] - 5.0
+    rpm[after] = settled + (peak - settled) * np.exp(-x / (settle_s / 3.0))
+    return pd.DataFrame({"Time": t, "Engine RPM": rpm, "MAP": np.full(n, 45.0),
+                         "Throttle Position": np.full(n, 4.0), "Coolant Temp": np.full(n, 195.0)})
+
+
+def test_startup_flare_detected_and_not_critical():
+    f = [x for x in _diag(_startup_log(peak=1800, settled=900)) if x.id == "STARTUP_FLARE"]
+    assert f and f[0].severity in ("warning", "info")   # never 'critical'
+    assert any("Cranking Airflow" in c or "startup airflow" in c.lower()
+               for c in f[0].corrections)
+
+
+def test_no_startup_flare_when_log_starts_running():
+    # a mid-drive log (no crank-from-off) must NOT report a startup
+    n = 1000
+    df = pd.DataFrame({"Time": np.arange(n) * 0.05, "Engine RPM": np.full(n, 2200.0),
+                       "MAP": np.full(n, 45.0), "Throttle Position": np.full(n, 25.0),
+                       "Coolant Temp": np.full(n, 195.0)})
+    assert "STARTUP_FLARE" not in _ids(_diag(df))
+
+
+def test_clean_startup_no_flare():
+    # a tidy startup (small overshoot, quick settle) should not flag
+    assert "STARTUP_FLARE" not in _ids(_diag(_startup_log(peak=1100, settled=900, settle_s=4)))
+
+
 # ---- idle quality ----
 def _idle_log(idle_rpm=750.0, std=20.0, target=750.0, afr=14.5, iac=25.0,
               timing_std=1.0, n=1200):

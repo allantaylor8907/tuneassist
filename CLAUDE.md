@@ -54,6 +54,9 @@ tunable state.
   vs logged idle target, idle AFR, IAC-closed, idle-timing swing). Detectors
   degrade if channels absent; findings ranked critical→info and shown as a
   readable "What I see / Likely / Do this" panel. ASCII-safe. Tested.
+- `tables.py` — maps a recommended change → the **exact vendor table** to edit
+  (GM HP Tuners table names + Holley table names). `core._name_tables` appends
+  these to findings; `_primary_change_finding` names the lead table inline.
 - `cams.py` — optional cam specs → conservative idle/timing starting points
   (DESIGN §11). Classify stock/mild/big; starting-point guidance only. Tested.
 - `profile.py` — optional engine profile (block material, compression, power

@@ -135,15 +135,16 @@ def _primary_change_finding(summary, platform: str, airflow_mode: str):
     worst = getattr(summary, "max_abs_pct", 0.0)
     if getattr(summary, "n_confident", 0) == 0 or worst < 1.5:
         return None
+    from .tables import table as _tbl
     n = summary.n_confident
     focus = summary.focus or "the populated cells"
     off = summary.offset or {}
     if platform == "holley":
-        table, what = "base fuel table", "Base fuel"
+        table, what = _tbl("holley", "ve"), "Base fuel"
     elif airflow_mode == "maf":
-        table, what = "MAF calibration (by frequency)", "MAF curve"
+        table, what = _tbl("gm", "maf"), "MAF curve"
     else:
-        table, what = "Main VE table", "VE table"
+        table, what = _tbl("gm", "ve"), "VE table"
     sev = "warning" if worst >= 3 else "info"
     corrections = []
     if (off.get("shape") == "global_offset" and platform != "holley"
@@ -154,6 +155,7 @@ def _primary_change_finding(summary, platform: str, airflow_mode: str):
     corrections.append(
         f"Apply the correction grid (shown below) to your {table}: multiply-by-percent "
         "-- a +5 cell means multiply that cell by 1.05.")
+    # (table already reads e.g. 'Main VE table (Engine > Airflow > Volumetric Efficiency)')
     corrections.append("Leave cells marked '-' (too few samples); re-log to confirm they shrink.")
     return Finding("APPLY_FUEL", sev, f"{what} needs correction (apply the grid below)",
                    f"The correction grid has changes up to {worst:.0f}% across {n} cells "
@@ -219,6 +221,24 @@ def _apply_mod_insights(findings, summary, result, mods):
         lean.causes.append(
             "a cold-air intake / intake-tube change alters the MAF airflow signal -- the MAF "
             "curve may need recalibration (not the VE table)")
+
+
+def _name_tables(findings, platform: str):
+    """Append the exact vendor table to edit for findings whose fix maps to one.
+    (APPLY_FUEL and STARTUP_FLARE already name their tables inline.)"""
+    from .tables import table
+    keys = {
+        "KNOCK": "spark", "INJ_DUTY": "injector", "HIGH_IAT": "iat_spark",
+        "IDLE_HIGH": "idle_air", "IDLE_LOW": "idle_air", "VACUUM_LEAK": "idle_air",
+        "IDLE_TIMING_SWING": "idle_spark", "WARMUP_RICH": "warmup_enr",
+        "WARMUP_LEAN": "warmup_enr", "ENRICH_NOT_DECAYED": "ase",
+        "WOT_RICH": "pe", "WOT_TARGET_LEAN": "pe", "WOT_TARGET_RISK": "pe",
+        "IDLE_RICH": "ve", "IDLE_LEAN": "ve",
+    }
+    for f in findings:
+        k = keys.get(f.id)
+        if k:
+            f.corrections.append(f"In your tune: the {table(platform, k)}.")
 
 
 def _annotate_safety_resolution(findings, summary, platform: str, airflow_mode: str):
@@ -367,6 +387,8 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
         mods = list(getattr(opts.profile, "mods", []) or [])
         if mods:
             _apply_mod_insights(findings, summary, result, mods)
+        # Point each finding at the EXACT vendor table to edit.
+        _name_tables(findings, platform)
 
     spark_has_work = bool(spark and spark.can_run and
                           (spark.knock_cells or (spark.action is not None and
