@@ -30,8 +30,11 @@ class DiagnosticConfig:
     o2_suspect: float = 4.0       # wideband vs commanded gap % (closed loop)
     wot_map_min: float = 80.0     # kPa: WOT / power region
     wot_lean_afr: float = 13.0    # WOT measured AFR leaner than this = danger
-    wot_target_afr: float = 12.6  # a safe NA pump WOT target
+    wot_target_afr: float = 12.8  # NA pump WOT sweet spot (12.8-12.9 makes best power)
     wot_rich_afr: float = 12.2    # richer than this at WOT = power left on table
+    trim_clip: float = 22.0       # |trim|% at/above this = hitting ECU authority limit
+    batt_low: float = 12.8        # avg running voltage below this = charging/dead-time
+    fp_low: float = 38.0          # base fuel pressure (psi) below this = too low for EFI
     inj_duty_max: float = 85.0    # injector duty % above this = fuel-system limit
     knock_deg: float = 1.0        # sustained retard above this = real knock
     iat_hot: float = 140.0        # F
@@ -437,6 +440,75 @@ def _d_temps(df, col, cfg, dc, warm):
     return out
 
 
+def _d_trim_clipping(df, col, cfg, dc, warm):
+    """Any fuel-trim bank pegged near the ECU's correction authority (~+/-25%)
+    means it's out of room to compensate -- the base is way off or there's a leak
+    / fuel-supply problem."""
+    for k in ("stft", "ltft", "stft2", "ltft2"):
+        s = _num(df, col, k)
+        if s is None:
+            continue
+        sv = s[warm].dropna()
+        if len(sv) < 30:
+            continue
+        peak = float(sv.abs().quantile(0.95))
+        if peak >= dc.trim_clip:
+            direction = "adding" if sv.median() > 0 else "pulling"
+            return Finding("TRIM_CLIPPING", "warning", "Fuel trims are maxed out",
+                           f"Fuel trim is hitting ~{peak:.0f}% ({direction} fuel) -- near "
+                           "the ECU's correction limit, so it's out of room to compensate.",
+                           ["base fuel/VE airflow is way off",
+                            "big vacuum leak or a fuel-supply problem",
+                            "wrong injector flow scaling"],
+                           ["Fix the underlying airflow/fuel error (apply the correction, "
+                            "check for leaks and fuel pressure) -- at the limit the ECU can "
+                            "no longer hide it, so the engine will go lean/rich for real."],
+                           "high")
+    return None
+
+
+def _d_low_voltage(df, col, cfg, dc, warm):
+    b = _num(df, col, "battery")
+    if b is None:
+        return None
+    bv = b[warm].dropna()
+    bv = bv[bv > 6]                       # ignore key-off / bad reads
+    if len(bv) < 30:
+        return None
+    med = float(bv.median())
+    if med < dc.batt_low:
+        return Finding("LOW_VOLTAGE", "warning", "Low system voltage",
+                       f"Voltage averages ~{med:.1f}V while running (want ~13.8-14.5). "
+                       "Low voltage slows the fuel pump and lengthens injector opening, "
+                       "which skews fueling.",
+                       ["charging system / alternator / ground", "heavy electrical load"],
+                       ["Fix charging so it holds ~14V.",
+                        "Confirm the injector dead-time (offset) vs voltage table is set, "
+                        "or fueling drifts as voltage changes."], "medium")
+    return None
+
+
+def _d_low_fuel_pressure(df, col, cfg, dc, warm):
+    fp = _num(df, col, "fuelpres")
+    if fp is None:
+        return None
+    mapk = _num(df, col, "map")
+    base = fp[warm & (mapk < 60)].dropna() if mapk is not None else fp[warm].dropna()
+    base = base[base > 5]
+    if len(base) < 20:
+        return None
+    med = float(base.median())
+    if med < dc.fp_low:
+        return Finding("LOW_FUEL_PRESSURE", "warning", "Fuel pressure is low",
+                       f"Fuel pressure sits ~{med:.0f} psi at light load -- low for port "
+                       "EFI (typically ~43-60). Less fuel per pulse means a lean tendency, "
+                       "worst up top.",
+                       ["weak pump / clogged filter", "regulator set low", "restricted supply"],
+                       ["Set base fuel pressure to spec and verify it holds before tuning fuel."],
+                       "medium")
+    return None
+
+
 def _d_trim_oscillation(df, col, cfg, dc, warm):
     st = _num(df, col, "stft")
     if st is None:
@@ -748,8 +820,8 @@ def _idle_findings(df, col, cfg, dc, warm):
 
 
 _DETECTORS = [_d_cruise_trim, _d_bank_imbalance, _d_wb_vs_commanded,
-              _d_wot_fueling, _d_injector_duty, _d_knock, _d_temps,
-              _d_trim_oscillation]
+              _d_wot_fueling, _d_injector_duty, _d_trim_clipping, _d_low_voltage,
+              _d_low_fuel_pressure, _d_knock, _d_temps, _d_trim_oscillation]
 
 
 # Detectors that only make sense on the GM/HPTuners model (the wideband is

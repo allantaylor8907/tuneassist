@@ -157,7 +157,7 @@ def _primary_change_finding(summary, platform: str, airflow_mode: str):
     corrections.append("Leave cells marked '-' (too few samples); re-log to confirm they shrink.")
     return Finding("APPLY_FUEL", sev, f"{what} needs correction (apply the grid below)",
                    f"The correction grid has changes up to {worst:.0f}% across {n} cells "
-                   f"(mostly {focus}).", [], corrections, "high")
+                   f"(biggest in {focus}).", [], corrections, "high")
 
 
 def _raises_fuel_up_top(result) -> bool:

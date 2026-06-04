@@ -22,7 +22,7 @@ from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
 from textual.screen import Screen, ModalScreen
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll, Grid
 from textual.widgets import (Header, Footer, Button, Input, Select, Switch,
                              Static, Label, DataTable, DirectoryTree, Collapsible,
                              TabbedContent, TabPane, Checkbox)
@@ -279,7 +279,7 @@ class SetupScreen(Screen):
 
             # --- Mods: check all that apply (Turbo/Super/Nitrous set the adder) ---
             yield Label("Mods (check all that apply)")
-            with Horizontal(id="mods", classes="modwrap"):
+            with Grid(id="mods"):
                 for i, m in enumerate(COMMON_MODS):
                     yield Checkbox(m, id=f"mod{i}", classes="modcheck")
 
@@ -629,8 +629,8 @@ class TuneAssistApp(App):
     #setup Input, #setup Select { margin: 0 0 1 0; width: 70; }
     .switchrow { height: auto; }
     .switchrow Label { padding: 1 2 0 0; }
-    .modwrap { height: auto; width: 74; }
-    .modcheck { width: 36; height: auto; }
+    #mods { grid-size: 2; grid-rows: auto; grid-gutter: 0 2; height: auto; width: 76; margin: 0 0 1 0; }
+    #mods Checkbox { width: 1fr; height: auto; }
     #dialog {
         width: 60; height: auto; padding: 1 2; margin: 4 0;
         background: $panel; border: thick $primary; align: center middle;

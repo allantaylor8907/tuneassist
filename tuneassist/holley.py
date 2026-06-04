@@ -59,6 +59,7 @@ HOLLEY_PATTERNS = {
     "baro":      [r"\bbaro\b", r"barometric"],
     "fuelpres":  [r"fuel.*pres"],
     "boost":     [r"boost"],
+    "battery":   [r"\bbattery\b", r"\bvolts?\b"],
     "iac":         [r"iac position", r"\biac\b"],
     "idle_target": [r"target idle", r"desired idle"],
     "ase":         [r"afterstart", r"after.?start"],

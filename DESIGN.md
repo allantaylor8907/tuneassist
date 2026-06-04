@@ -238,6 +238,14 @@ tune quality), `opportunity` (free power / refinement), `info`.
   booster hose, injector o-rings) BEFORE tuning idle — never "tune out" a leak.
 - **Trim oscillation** (high STFT variance): O2 wiring/heater, exhaust leak near
   sensor, or closed-loop gains too aggressive.
+- **Trims clipping** (a bank pegged near the ~±25 % authority): the ECU is out of
+  room to correct — the base table/airflow is way off, or there's a big leak /
+  fuel-supply problem. (Well-tuned LS LTFT sits within ~±4 %.)
+- **Low system voltage** (avg < ~12.8 V running): slows the fuel pump and
+  lengthens injector opening → fueling drifts; check charging + injector dead-time
+  (offset-vs-voltage).
+- **Low fuel pressure** (base < ~38 psi for port EFI): less fuel per pulse, lean
+  tendency worst up top → set base pressure to spec before tuning fuel.
 
 ### O2 / wideband
 - **Wideband disagrees with commanded in closed loop** (>`o2_suspect`%, see §4):

@@ -168,6 +168,40 @@ def test_overheat_and_high_iat():
     assert "OVERHEAT" in ids and "HIGH_IAT" in ids
 
 
+def test_trim_clipping():
+    df = _base()
+    df["Short Term Fuel Trim Bank 1"] = 24.0      # pegged near +/-25 authority
+    df["Long Term Fuel Trim Bank 1"] = 0.0
+    assert "TRIM_CLIPPING" in _ids(_diag(df))
+
+
+def test_low_voltage():
+    df = _base()
+    df["Battery Voltage"] = 12.1
+    assert "LOW_VOLTAGE" in _ids(_diag(df))
+
+
+def test_low_voltage_ignores_keyoff_reads():
+    import numpy as np
+    df = _base(n=600)
+    v = np.full(600, 14.1); v[:50] = 0.0          # a few key-off/bad reads
+    df["Battery Voltage"] = v
+    assert "LOW_VOLTAGE" not in _ids(_diag(df))
+
+
+def test_low_fuel_pressure():
+    df = _base()
+    df["Fuel Pressure"] = 33.0
+    assert "LOW_FUEL_PRESSURE" in _ids(_diag(df))
+
+
+def test_normal_voltage_and_pressure_clean():
+    df = _base()
+    df["Battery Voltage"] = 14.1
+    df["Fuel Pressure"] = 58.0
+    assert not (_ids(_diag(df)) & {"LOW_VOLTAGE", "LOW_FUEL_PRESSURE", "TRIM_CLIPPING"})
+
+
 def test_trim_oscillation():
     rng = np.random.default_rng(0)
     df = _base(n=400)

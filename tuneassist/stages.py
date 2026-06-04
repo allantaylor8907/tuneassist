@@ -260,9 +260,10 @@ def prescribe(stage: str, summary: AnalysisSummary, triage_recs: list,
     if stage == "TUNE_VE_SD":
         if not gm:        # Holley: self-learning base fuel, no VE/MAF/SD phases
             actions = [
-                "Bake the learned correction into the BASE FUEL table: the grid is "
-                "what CL-comp + Learn already had to add/remove to hit target.",
+                "Transfer the learned correction into the BASE FUEL table (in the Holley "
+                "software, 'Modify > Transfer Learn to Base Fuel' -- WITHOUT smoothing).",
                 "Then reset/clear the Learn table so it starts fresh from the new base.",
+                "Once it's stable, tighten the Learn parameters.",
             ]
             if summary.focus:
                 actions.append(f"Biggest error is in {summary.focus}.")
@@ -301,8 +302,8 @@ def prescribe(stage: str, summary: AnalysisSummary, triage_recs: list,
             actions.append("KNOCK was logged -- review timing before trusting WOT cells.")
         return Prescription(
             stage, STAGE_TITLE[stage],
-            f"Cruise VE is still off ({summary.focus or 'see grid'}). Apply the change, "
-            "then re-log the same drive to watch the trims shrink.",
+            f"Your VE/fuel is still off (biggest change in {summary.focus or 'the grid'}). "
+            "Apply the correction, then re-log the same drive to watch the trims shrink.",
             actions=actions,
             drive="Re-drive the same cruise loop so cells line up pass-to-pass. "
                   "Add time in any thin/empty cells.",

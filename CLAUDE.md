@@ -46,7 +46,8 @@ tunable state.
 - `diagnostics.py` — **pattern-based symptom→cause→correction engine** (DESIGN
   §12). `diagnose(df, col, cfg, platform, profile) → [Finding]`: lean/rich cruise,
   vacuum leak, bank imbalance, WB-vs-NB (GM-only), WOT shortfall/lean/rich,
-  injector duty, knock, temps, trim oscillation, a **forced-induction** set
+  injector duty, trims-clipping, low-voltage, low-fuel-pressure, knock, temps,
+  trim oscillation, a **forced-induction** set
   (boost-lean, fuel-pressure-drop, MAP-sensor-range, CL-in-boost, boost-IAT), a
   **cold-start/warmup** set (thermostat, warmup rich/lean, enrichment-not-decayed
   with neutral-baseline detection), and an **idle-quality** set (hunt, off-target
