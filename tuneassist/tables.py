@@ -22,6 +22,9 @@ _GM = {
     "injector":    "injector flow-rate / injector data (Engine > Fuel > Injectors)",
     "warmup_enr":  "warmup (coolant-temp) enrichment table",
     "ase":         "afterstart / post-start enrichment table",
+    "shift_pts":   "WOT/part-throttle upshift tables (Transmission > Shift Speed/RPM)",
+    "line_pres":   "line/main pressure (EPC) tables",
+    "tcc":         "TCC lockup tables",
 }
 
 _HOLLEY = {
@@ -37,6 +40,9 @@ _HOLLEY = {
     "injector":    "injector data (size / flow)",
     "warmup_enr":  "Coolant Enrichment table",
     "ase":         "Afterstart Enrichment table",
+    "shift_pts":   "Shift Points (upshift RPM/MPH) tables",
+    "line_pres":   "Line Pressure table",
+    "tcc":         "TCC lockup settings",
 }
 
 

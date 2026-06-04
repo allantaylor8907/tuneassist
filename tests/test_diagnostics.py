@@ -260,6 +260,57 @@ def test_na_log_has_no_boost_findings():
     assert "FORCED_INDUCTION" not in ids and "BOOST_LEAN" not in ids
 
 
+# ---- transmission ----
+def test_trans_wot_shifts_early():
+    # WOT upshifts at ~4500 while the engine revs to 6200 -> early
+    rpm, gear, tps = [], [], []
+    cur = 1
+    for _ in range(4):
+        for r in range(3000, 4600, 100):
+            rpm.append(r); gear.append(cur); tps.append(90)
+        cur += 1
+        for r in range(2800, 3200, 100):
+            rpm.append(r); gear.append(cur); tps.append(90)
+    for r in range(4000, 6300, 100):                 # one pull to 6200
+        rpm.append(r); gear.append(1); tps.append(95)
+    n = len(rpm)
+    df = pd.DataFrame({"Time": np.arange(n) * 0.1, "Engine RPM": rpm, "MAP": np.full(n, 95.0),
+                       "Throttle Position": tps, "Coolant Temp": np.full(n, 195.0), "Gear": gear})
+    assert "TRANS_SHIFT_EARLY" in _ids(_diag(df))
+
+
+def test_tcc_slip_with_live_iss():
+    n = 1200
+    rpm = np.full(n, 2200.0)
+    iss = np.full(n, 1700.0)            # live, but ~500 below engine -> slipping
+    df = pd.DataFrame({"Engine RPM": rpm, "Input Shaft Speed": iss, "MAP": np.full(n, 45.0),
+                       "Throttle Position": np.full(n, 15.0), "Coolant Temp": np.full(n, 195.0),
+                       "TCC Lockup": np.full(n, 1.0)})       # commanded locked
+    f = [x for x in _diag(df) if x.id == "TCC_SLIP"]
+    assert f and f[0].severity == "warning"
+
+
+def test_dead_iss_does_not_false_flag():
+    # ISS present but reads 0 (not wired), TCC always 0 (no lockup) -> stay silent
+    n = 1200
+    df = pd.DataFrame({"Engine RPM": np.full(n, 2200.0), "Input Shaft Speed": np.zeros(n),
+                       "MAP": np.full(n, 45.0), "Throttle Position": np.full(n, 15.0),
+                       "Coolant Temp": np.full(n, 195.0), "TCC Lockup": np.zeros(n)})
+    ids = _ids(_diag(df))
+    assert not (ids & {"TCC_SLIP", "TCC_NOT_LOCKING"})
+
+
+def test_line_pressure_flat():
+    n = 1200
+    rpm = np.r_[np.full(600, 800.0), np.full(600, 5000.0)]
+    tps = np.r_[np.full(600, 4.0), np.full(600, 90.0)]
+    lp = np.full(n, 120.0)              # same at idle and WOT -> doesn't rise
+    df = pd.DataFrame({"Engine RPM": rpm, "Throttle Position": tps, "MAP": np.full(n, 60.0),
+                       "Coolant Temp": np.full(n, 195.0), "Gear": np.r_[np.full(600, 1.0), np.full(600, 2.0)],
+                       "Line Pressure": lp})
+    assert "LINE_PRESSURE_FLAT" in _ids(_diag(df))
+
+
 # ---- cold start / warmup ----
 def _warmup_log(warmup_afr=14.7, ect_max=190.0, dur_s=400.0, ase_warm=0.0,
                 ase_neutral=0.0, n=2000):

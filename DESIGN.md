@@ -271,6 +271,24 @@ tune quality), `opportunity` (free power / refinement), `info`.
 - **Knock only when heat-soaked**: cooling + IAT-based spark retard; iron blocks
   especially (§11). **Cruise/light-load knock**: over-aggressive economy timing.
 
+### Transmission (`_trans_findings`, automatic trans channels)
+From logged trans channels (gear, input-shaft speed, line pressure, TCC) — covers
+the three things people actually tune. Degrades to nothing without those channels.
+- **WOT shifts early**: among full-throttle upshifts (RPM *just before* the gear
+  change), if the engine clearly revs higher than where it's upshifting (peak >
+  ~5500, shift > ~900 below peak) → raise the WOT upshift points toward the top of
+  the powerband (leave part-throttle alone for manners).
+- **Converter/TCC slip**: at steady cruise, engine RPM vs input-shaft speed. If the
+  TCC is commanded locked but slip > ~250–400 RPM → it's slipping (heat, wear) →
+  firm up TCC apply. **Guard:** a present ISS channel may be DEAD (reads ~0, not
+  wired — seen on a real Sniper); we require the input shaft to actually track RPM
+  before trusting any slip/lock conclusion, so an unwired sensor never invents a
+  "TCC not locking" finding.
+- **Line pressure flat**: if main/line pressure barely rises from idle to high
+  throttle, it won't clamp the clutches under power → shifts slip and burn → raise
+  line pressure vs throttle. (Thresholds are conservative defaults — to be refined
+  from the user's transmission notes.)
+
 ### Startup flare / idle settle (`_startup_findings`, runs on the FULL log)
 From the RPM trace, only when a *real* start is captured (engine cranks from off,
 then catches — a mid-drive log with no start is skipped, so we never cry "startup

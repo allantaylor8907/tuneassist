@@ -724,6 +724,100 @@ def _startup_findings(df, col, cfg, dc, platform="gm"):
         corr, "high")]
 
 
+def _trans_findings(df, col, cfg, dc, platform="gm"):
+    """Automatic-transmission analysis from logged trans channels (gear, input
+    shaft speed, line pressure, TCC). Degrades to nothing if those aren't logged.
+    Covers the three things people actually tune: WOT shift points, converter/TCC
+    slip, and line pressure under load."""
+    from .tables import table
+    out = []
+    rpm = _num(df, col, "rpm")
+    if rpm is None:
+        return out
+    tps = _num(df, col, "tps")
+    gear = _num(df, col, "gear")
+
+    # --- WOT upshift points: shifting below the powerband loses ET (needs gear) ---
+    if gear is not None and tps is not None:
+        g = gear.round()
+        prev = g.shift(1)
+        upshift = (g > prev) & (prev >= 1) & (g <= 10)
+        # the shift RPM is the value JUST BEFORE the gear changed (the pre-shift
+        # peak), not the post-shift RPM at the gear-change sample.
+        sr = rpm.shift(1)[upshift & (tps > 70)].dropna() if upshift.any() else rpm.iloc[:0]
+        if len(sr) >= 2:
+            med = float(sr.median())
+            peak = float(rpm.quantile(0.999))
+            if peak > 5500 and med < peak - 900 and med < 5400:
+                out.append(Finding(
+                    "TRANS_SHIFT_EARLY", "info", "WOT shifts are early",
+                    f"At full throttle the trans upshifts around ~{med:.0f} rpm, but the "
+                    f"engine revs to ~{peak:.0f}. Shifting ~{peak - med:.0f} rpm short of "
+                    "the top of the powerband leaves ET on the table.",
+                    ["WOT upshift points set low/conservative"],
+                    [f"Raise the WOT (high-throttle) upshift RPM toward ~{peak - 300:.0f} so "
+                     f"it stays in the powerband -- the {table(platform, 'shift_pts')}.",
+                     "Leave part-throttle shifts where they are for street manners."],
+                    "medium"))
+
+    # --- Converter / TCC slip at cruise (engine vs input shaft) ---
+    # Guard: a present ISS channel may still be DEAD (reads ~0, not wired). A live
+    # input shaft tracks engine RPM while driving; if it doesn't, skip TCC/slip
+    # entirely (don't invent a 'TCC not locking' from an unwired sensor).
+    iss = _num(df, col, "iss")
+    tcc = _num(df, col, "tcc")
+    iss_live = (iss is not None
+                and float(iss[rpm > 1500].dropna().median() or 0) > 300)
+    if iss_live:
+        cruise = (rpm > 1200) & (rpm < 3200)
+        if tps is not None:
+            cruise &= tps < 25
+        slip = (rpm - iss)[cruise].dropna()
+        slip = slip[(slip > -200) & (slip < 4000)]    # sane range
+        if len(slip) > 40:
+            med = float(slip.median())
+            locked = None
+            if tcc is not None:
+                locked = float(tcc[cruise].dropna().median() or 0) > 0.5
+            if med > 250 and (locked is None or locked):
+                out.append(Finding(
+                    "TCC_SLIP", "warning" if med > 400 else "info",
+                    "Converter clutch slipping at cruise",
+                    f"Engine RPM runs ~{med:.0f} above the input shaft at steady cruise"
+                    + (" with the TCC commanded locked" if locked else "")
+                    + " -- a slipping converter clutch makes heat and wears out.",
+                    ["TCC apply pressure too low / worn clutch", "lockup disabled or late"],
+                    [f"Firm up TCC apply and make sure it locks at cruise -- the "
+                     f"{table(platform, 'tcc')}."], "medium"))
+            elif tcc is not None and locked is False and len(slip) > 120:
+                out.append(Finding(
+                    "TCC_NOT_LOCKING", "info", "TCC isn't locking at cruise",
+                    "The torque-converter clutch isn't engaging at steady cruise -- that "
+                    "costs mpg and makes transmission heat.",
+                    ["TCC lockup speed/throttle thresholds too high", "lockup disabled"],
+                    [f"Enable / lower the TCC lockup point for steady cruise -- the "
+                     f"{table(platform, 'tcc')}."], "low"))
+
+    # --- Line pressure should rise with throttle to clamp the clutches ---
+    lp = _num(df, col, "line_pres")
+    if lp is not None and tps is not None:
+        idle_lp = lp[(rpm > 500) & (tps < 10)].dropna()
+        load_lp = lp[tps > 60].dropna()
+        if len(idle_lp) > 20 and len(load_lp) > 20:
+            rise = float(load_lp.median()) - float(idle_lp.median())
+            if rise < 10:
+                out.append(Finding(
+                    "LINE_PRESSURE_FLAT", "info", "Line pressure barely rises under load",
+                    f"Line pressure is ~{float(idle_lp.median()):.0f} psi at idle and only "
+                    f"~{float(load_lp.median()):.0f} at high throttle. It should climb with "
+                    "throttle to clamp the clutches under power; flat pressure lets shifts "
+                    "slip and burn.",
+                    ["line/EPC pressure-vs-throttle set low"],
+                    [f"Raise line pressure under throttle for firmer shifts and clutch life "
+                     f"-- the {table(platform, 'line_pres')}."], "low"))
+    return out
+
+
 def _coldstart_findings(df, col, cfg, dc):
     """Cold-start / warmup analysis. Runs on the FULL log (not warm-masked) since
     the point is the cold portion. Degrades to nothing if the log is warm-only."""
@@ -958,6 +1052,7 @@ def diagnose(df: pd.DataFrame, col: dict, cfg, dc: DiagnosticConfig | None = Non
         pass
     for group, args in ((_idle_findings, (df, col, cfg, dc, warm, cam_class)),
                         (_startup_findings, (df, col, cfg, dc, platform)),
+                        (_trans_findings, (df, col, cfg, dc, platform)),
                         (_coldstart_findings, (df, col, cfg, dc)),
                         (_boost_findings, (df, col, cfg, dc, warm, profile))):
         try:
