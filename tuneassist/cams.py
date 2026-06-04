@@ -79,6 +79,8 @@ def starting_points(cam: CamSpec) -> CamStartingPoints:
             "Low-RPM/light-load can usually take a little more advance -- verify with knock."]),
         "big":     ((22, 28), 850, [
             "Big cam: idle wants noticeably more timing and airflow to stay lit.",
+            "Bump base idle airflow substantially (often ~50% over stock in the 600-1000 "
+            "RPM range) and raise the idle-bypass/'percentage max' so the IAC has room.",
             "Expect empty low-RPM VE cells; torque peak is higher -- prescribe higher-RPM drives.",
             "Lower dynamic compression down low improves knock tolerance there (still verify).",
             "Watch idle MAP -- it'll be higher/unsteadier than stock; don't chase it as a leak."]),

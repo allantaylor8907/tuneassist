@@ -290,6 +290,10 @@ tune quality), `opportunity` (free power / refinement), `info`.
 - **Off-target idle**: actual idle RPM vs the logged target idle beyond
   `idle_rpm_tol` — high (leak / throttle stop / IAC can't pull it down) or low
   (not enough idle air, IAC out of authority, idle timing too low / stall risk).
+  When no target is logged we infer a typical idle from the cam class (HP Academy /
+  HP Tuners: stock LS ~550-600, mild ~760, big-cam ~850; wider tolerance, info
+  severity). Idle is read on a true-idle mask (`_idle_mask`): low RPM, idle-range
+  MAP, and vehicle speed ~0 — so closed-throttle decel/coast doesn't look like a hunt.
 - **Idle AFR** rich (`idle_afr_rich`) or lean (`idle_afr_lean`).
 - **IAC fully closed** at idle yet idle holds → extra unmetered air (leak) or the
   throttle stop is cracked too far (IAC has no room to control).

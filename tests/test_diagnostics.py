@@ -320,6 +320,21 @@ def test_idle_high_vs_target():
     assert "IDLE_HIGH" in _ids(_diag(_idle_log(idle_rpm=1000.0, target=750.0)))
 
 
+def test_idle_high_inferred_from_cam_without_target():
+    # no logged idle target: a stock-cam build idling at 1050 is high (expected ~600)
+    import numpy as np
+    from tuneassist.diagnostics import diagnose
+    rng = np.random.default_rng(0)
+    rpm = np.clip(1050 + rng.normal(0, 20, 1200), 500, 1300)
+    df = pd.DataFrame({"Engine RPM": rpm, "MAP": np.full(1200, 45.0),
+                       "Throttle Position": np.full(1200, 4.0), "Coolant Temp": np.full(1200, 195.0)})
+    ids = {f.id for f in diagnose(df, resolve_columns(df), Config(), cam_class="stock")}
+    assert "IDLE_HIGH" in ids
+    # without cam info there's no logged target either -> no inferred guess (no false flag)
+    ids2 = {f.id for f in diagnose(df, resolve_columns(df), Config())}
+    assert "IDLE_HIGH" not in ids2
+
+
 def test_idle_low_vs_target():
     assert "IDLE_LOW" in _ids(_diag(_idle_log(idle_rpm=560.0, target=800.0)))
 

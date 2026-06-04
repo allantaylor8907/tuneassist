@@ -733,7 +733,12 @@ def _coldstart_findings(df, col, cfg, dc):
     return out
 
 
-def _idle_findings(df, col, cfg, dc, warm):
+# Typical idle RPM by build (HP Academy / HP Tuners): stock LS ~550-600, a healthy
+# cammed LS ~800-850. Used to judge high/low idle when no target idle is logged.
+EXPECTED_IDLE = {"stock": 600, "mild": 760, "big": 860}
+
+
+def _idle_findings(df, col, cfg, dc, warm, cam_class=None):
     """Warm idle quality: hunting, off-target RPM, idle AFR, IAC authority,
     idle-timing fighting. Uses warm idle samples only."""
     out = []
@@ -761,30 +766,36 @@ def _idle_findings(df, col, cfg, dc, warm):
              "Smoke-test for leaks; soften idle spark correction while dialing in."],
             "medium"))
 
-    # Actual vs target idle RPM
+    # Actual vs target idle RPM. Prefer a logged target; otherwise infer a typical
+    # idle from the cam class (less certain -> info, wider tolerance).
+    target, tol, sev, ctx = None, dc.idle_rpm_tol, "warning", ""
     tgt = _num(df, col, "idle_target")
     if tgt is not None:
         tv = tgt[idle].dropna()
         if len(tv) > 20:
             target = float(tv.median())
-            gap = idle_rpm - target
-            if gap > dc.idle_rpm_tol:
-                out.append(Finding(
-                    "IDLE_HIGH", "warning", "Idle higher than target",
-                    f"Idle sits ~{idle_rpm:.0f} vs a target of ~{target:.0f} rpm "
-                    f"(+{gap:.0f}).",
-                    ["vacuum leak / extra unmetered air", "throttle blade stop set too high",
-                     "IAC commanded closed but can't pull it down"],
-                    ["Check for leaks; set the throttle stop / IAC so idle meets target."],
-                    "medium"))
-            elif gap < -dc.idle_rpm_tol:
-                out.append(Finding(
-                    "IDLE_LOW", "warning", "Idle lower than target (stall risk)",
-                    f"Idle sits ~{idle_rpm:.0f} vs a target of ~{target:.0f} rpm "
-                    f"({gap:.0f}).",
-                    ["not enough idle airflow", "IAC out of authority", "idle spark too low"],
-                    ["Raise idle airflow (IAC/min-air) so it holds target; "
-                     "check idle timing isn't too retarded."], "medium"))
+            ctx = f"a target of ~{target:.0f} rpm"
+    if target is None and cam_class in EXPECTED_IDLE:
+        target = EXPECTED_IDLE[cam_class]
+        tol, sev = 280, "info"
+        ctx = f"~{target:.0f} rpm (typical for a {cam_class} build; no target logged)"
+    if target is not None:
+        gap = idle_rpm - target
+        if gap > tol:
+            out.append(Finding(
+                "IDLE_HIGH", sev, "Idle higher than expected",
+                f"Idle sits ~{idle_rpm:.0f} vs {ctx} (+{gap:.0f}).",
+                ["vacuum leak / extra unmetered air", "throttle blade stop set too high",
+                 "IAC commanded closed but can't pull it down"],
+                ["Check for leaks; set the throttle stop / IAC so idle meets target."],
+                "medium"))
+        elif gap < -tol:
+            out.append(Finding(
+                "IDLE_LOW", sev, "Idle lower than expected (stall risk)",
+                f"Idle sits ~{idle_rpm:.0f} vs {ctx} ({gap:.0f}).",
+                ["not enough idle airflow", "IAC out of authority", "idle spark too low"],
+                ["Raise idle airflow (IAC/min-air) so it holds target; "
+                 "check idle timing isn't too retarded."], "medium"))
 
     # Idle AFR
     afr = _num(df, col, "afr_actual")
@@ -824,13 +835,15 @@ def _idle_findings(df, col, cfg, dc, warm):
     if spk is not None:
         sv = spk[idle].dropna()
         if len(sv) > 40 and float(sv.std()) > dc.idle_timing_std:
+            fix = ["Soften idle spark correction while you stabilize idle airflow/fuel."]
+            if cam_class == "big":
+                fix.append("On a big cam, multiply the idle spark-vs-RPM table by ~0.5 to "
+                           "stop it over-correcting.")
             out.append(Finding("IDLE_TIMING_SWING", "info",
                 "Idle timing is swinging",
                 f"Idle spark advance varies a lot (std {float(sv.std()):.1f} deg) - the "
                 "idle spark-vs-RPM correction may be amplifying the hunt.",
-                ["idle spark correction (rpm error -> timing) too strong"],
-                ["Soften idle spark correction while you stabilize idle airflow/fuel."],
-                "low"))
+                ["idle spark correction (rpm error -> timing) too strong"], fix, "low"))
     return out
 
 
@@ -870,7 +883,7 @@ def diagnose(df: pd.DataFrame, col: dict, cfg, dc: DiagnosticConfig | None = Non
             findings.append(vl)
     except Exception:        # pragma: no cover - defensive
         pass
-    for group, args in ((_idle_findings, (df, col, cfg, dc, warm)),
+    for group, args in ((_idle_findings, (df, col, cfg, dc, warm, cam_class)),
                         (_coldstart_findings, (df, col, cfg, dc)),
                         (_boost_findings, (df, col, cfg, dc, warm, profile))):
         try:
