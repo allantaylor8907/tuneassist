@@ -169,7 +169,17 @@ def _closed_loop_mask(df: pd.DataFrame, col: dict, cfg: Config) -> np.ndarray:
     commands a rich target, which is how open loop is detected without a status
     channel."""
     if "cl_status" in col:
-        return df[col["cl_status"]].astype(str).str.lower().str.contains("closed").to_numpy()
+        s = df[col["cl_status"]].astype(str)
+        # SAE strings are 'CL - Normal' (closed loop) / 'OL - Not Ready' (open
+        # loop), NOT the literal word 'closed'. Recognize the CL/OL abbreviation.
+        if s.str.contains(r"\b[CO]L\b", case=False, regex=True).any():
+            return s.str.contains(r"\bcl\b|closed", case=False, regex=True).to_numpy()
+        v = pd.to_numeric(df[col["cl_status"]], errors="coerce")
+        if v.notna().mean() > 0.5:        # numeric status: 2 = closed-loop, else 1/0 flag
+            u = set(v.dropna().unique())
+            m = ((v == 2) if 2 in u else (v >= 1)).to_numpy()
+            if m.any():
+                return m
     if "afr_cmd" in col:
         return (df[col["afr_cmd"]] >= 14.0).to_numpy()
     if "eq_cmd" in col:
@@ -302,6 +312,11 @@ def analyze(df: pd.DataFrame, cfg: Config, base_ve: pd.DataFrame | None = None) 
             reason = (f"All samples excluded: engine never reached operating temp "
                       f"(max coolant {mx:.0f}F, need >={cfg.ect_min_f:.0f}F). "
                       f"Warm-up data isn't valid for VE/fuel correction.")
+        elif corr.notna().sum() == 0 and "cl_status" in col and \
+                _closed_loop_mask(df, col, cfg).sum() == 0:
+            reason = ("Engine stayed in OPEN loop the whole log (O2/closed-loop never "
+                      "engaged), so the fuel trims aren't actively correcting -- nothing to "
+                      "read. Warm it fully so it enters closed loop, or log a wideband.")
         elif corr.notna().sum() == 0:
             reason = ("No fueling-error signal: log has neither usable fuel trims "
                       "nor wideband+commanded AFR.")

@@ -156,6 +156,24 @@ def test_mod_long_tubes_add_header_leak_to_bank_imbalance():
     assert any("exhaust leak" in c.lower() for c in bank.causes)
 
 
+def test_sae_closed_loop_strings_produce_grid():
+    # 'Fuel System Status' as SAE 'CL - Normal' / 'OL - ...' must be understood as
+    # closed loop (not the literal word 'closed') so trims build a correction grid
+    import numpy as np, pandas as pd, tempfile
+    from tuneassist.engine_gm import analyze, resolve_columns, Config as GCfg
+    n = 2000
+    rpm = np.clip(1800 + 900 * np.sin(np.arange(n) / 40), 700, 3200)
+    mapk = np.clip(45 + 25 * np.sin(np.arange(n) / 33), 22, 90)
+    status = np.where(np.arange(n) % 5 == 0, "OL - Accel/Decel", "CL - Normal")
+    df = pd.DataFrame({"Engine RPM": rpm, "Intake Manifold Absolute Pressure": mapk,
+                       "Throttle Position": np.clip(mapk - 20, 0, 80),
+                       "Coolant Temp": np.full(n, 195.0), "Fuel System #1 Status": status,
+                       "Short Term Fuel Trim Bank 1": np.full(n, 4.0),
+                       "Long Term Fuel Trim Bank 1": np.zeros(n)})
+    res = analyze(df, GCfg())
+    assert not res.correction.empty and int(res.confidence.values.sum()) > 0
+
+
 def test_findings_name_exact_vendor_tables():
     # GM: lead finding names the Main VE table; a finding names its table
     cr = analyze_log(os.path.join(FIX, "ride42.csv"), _opts(tune_spark=True))

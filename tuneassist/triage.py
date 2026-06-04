@@ -114,22 +114,11 @@ def triage(df: pd.DataFrame, col: dict, th: TriageThresholds | None = None) -> T
              "Check cranking fuel / afterstart enrichment isn't zeroed; flooded or bone-dry "
              "both show as crank-no-start -- read plugs to tell which."])
 
-    # It caught at least once. Did it stay running?
+    # It caught at least once. Is there real DRIVING variation? If so the log is
+    # usable -- even if it ends at 0 rpm (you logged through shutdown). A normal
+    # shutdown tail gets filtered downstream; it is NOT a stall.
     running_mask = rpm > th.run_rpm
-    ran_then_zero = running_mask.any() and (rpm[-int(len(rpm) * 0.1):] < th.crank_rpm).all()
-    # crude "ended dead": last 10% of log is back near zero after having run
-    if ran_then_zero:
-        return TriageResult("STARTED_STALLED", False,
-            f"Engine caught (peaked {rpm_max:.0f} rpm) then died.",
-            ["Raise idle airflow first -- IAC steps / throttle blade stop. Most "
-             "catch-and-die is simply not enough air to sustain idle.",
-             "Check afterstart and idle base fuel: too rich or too lean both stall.",
-             "Confirm idle spark advance is reasonable (very low advance won't hold idle).",
-             "Re-log a longer start attempt once idle air is bumped up."])
-
-    # It caught and stayed running. Is there real DRIVING variation? If so we
-    # don't care about idle micro-stability -- the log is usable.
-    running = rpm[rpm > th.run_rpm]
+    running = rpm[running_mask]
     rpm_span = float(np.nanmax(running) - np.nanmin(running)) if running.size else 0.0
     map_span = 0.0
     if "map" in col:
@@ -140,6 +129,20 @@ def triage(df: pd.DataFrame, col: dict, th: TriageThresholds | None = None) -> T
         return TriageResult("RUNNING_DRIVE", True,
             f"Warm, varied operating data (RPM span {rpm_span:.0f}, MAP span {map_span:.0f} kPa).",
             ["Proceed to fuel/VE correction."])
+
+    # No real driving. A true catch-and-die stall ran only BRIEFLY then dropped to
+    # ~0 -- distinguish that from an idle that the user simply shut off at the end.
+    run_t = t[running_mask]
+    ran_dur = float(np.nanmax(run_t) - np.nanmin(run_t)) if run_t.size else 0.0
+    ended_dead = (rpm[-int(len(rpm) * 0.1):] < th.crank_rpm).all()
+    if ended_dead and ran_dur < 25.0:
+        return TriageResult("STARTED_STALLED", False,
+            f"Engine caught (peaked {rpm_max:.0f} rpm) then died after ~{ran_dur:.0f}s.",
+            ["Raise idle airflow first -- IAC steps / throttle blade stop. Most "
+             "catch-and-die is simply not enough air to sustain idle.",
+             "Check afterstart and idle base fuel: too rich or too lean both stall.",
+             "Confirm idle spark advance is reasonable (very low advance won't hold idle).",
+             "Re-log a longer start attempt once idle air is bumped up."])
 
     # Essentially idle-only: now idle stability is the question that matters.
     idle_sel = (rpm > th.run_rpm) & (rpm < th.run_rpm + 800)   # idle band, not driving

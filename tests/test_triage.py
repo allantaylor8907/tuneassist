@@ -62,6 +62,16 @@ def test_no_data():
     assert triage(_log(np.zeros(5)), COL).state == "NO_DATA"
 
 
+def test_long_drive_ending_in_shutdown_is_running_drive():
+    # drove with variation, then logged through shutdown (ends at 0) -> NOT a stall
+    rng = np.random.default_rng(9)
+    drive = np.clip(2000 + 1300 * np.sin(np.arange(3000) / 50) + rng.normal(0, 80, 3000), 700, 4500)
+    rpm = np.r_[np.full(60, 200.0), drive, np.zeros(400)]   # crank, long drive, shutdown
+    mapk = np.clip(50 + 35 * np.sin(np.arange(len(rpm)) / 40), 20, 95)
+    r = triage(_log(rpm, mapk=mapk), COL)
+    assert r.state == "RUNNING_DRIVE"
+
+
 def test_no_crank_warm_engine_points_at_rpm_signal():
     # RPM reads 0 but coolant is warm -> the engine ran; suspect the tach/RPM signal
     df = _log(np.zeros(200))
