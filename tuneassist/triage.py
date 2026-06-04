@@ -79,8 +79,20 @@ def triage(df: pd.DataFrame, col: dict, th: TriageThresholds | None = None) -> T
          if "time" in col else np.arange(len(rpm)) * 0.05)
     rpm_max = float(np.nanmax(rpm))
 
-    # NO_CRANK: never even spun.
+    # NO_CRANK: never even spun. But a WARM engine reading 0 rpm didn't fail to
+    # crank -- it ran; the RPM/tach signal just isn't reaching the controller.
     if rpm_max < th.crank_rpm:
+        ect_max = (pd.to_numeric(df[col["ect"]], errors="coerce").max()
+                   if "ect" in col else float("nan"))
+        if ect_max == ect_max and ect_max > 140:     # warm: it clearly ran
+            return TriageResult("NO_CRANK", False,
+                f"RPM reads ~0 but coolant is warm ({ect_max:.0f}F) -- the engine ran, "
+                "so the RPM/tach signal isn't reaching the controller.",
+                ["The engine is fine (it warmed up); the RPM input is the suspect -- "
+                 "check the tach/crank-signal wiring and the RPM setup (cylinders, "
+                 "trigger type).",
+                 "Without an RPM signal the ECU can't schedule fuel/spark by RPM or log "
+                 "anything useful -- fix that first, then re-log."])
         return TriageResult("NO_CRANK", False,
             f"Engine never turned over (max {rpm_max:.0f} rpm).",
             ["Confirm the starter is cranking the engine (battery voltage under load, "

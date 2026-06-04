@@ -804,8 +804,12 @@ def _trans_findings(df, col, cfg, dc, platform="gm"):
                      f"{table(platform, 'tcc')}."], "low"))
 
     # --- Line pressure should rise with throttle to clamp the clutches ---
+    # Guard: the channel may be DEAD (reads ~0, no sensor wired -- seen on real
+    # Sniper logs). Real running line pressure is tens-to-hundreds of psi.
     lp = _num(df, col, "line_pres")
-    if lp is not None and tps is not None:
+    lp_live = (lp is not None
+               and float(lp[rpm > 1000].dropna().median() or 0) > 20)
+    if lp_live and tps is not None:
         idle_lp = lp[(rpm > 500) & (tps < 10)].dropna()
         load_lp = lp[tps > 60].dropna()
         if len(idle_lp) > 20 and len(load_lp) > 20:

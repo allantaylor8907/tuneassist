@@ -325,6 +325,10 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
     df, col = ingest(path, platform, cfg)
 
     tcol = {k: col[k] for k in ("rpm", "time", "tps", "map") if k in col}
+    if "ect" in col:                       # let triage tell "warm but no RPM signal"
+        tcol["ect"] = col["ect"]
+    elif "cts" in col:
+        tcol["ect"] = col["cts"]
     tr = triage(df, tcol)
 
     summary = stages.AnalysisSummary()

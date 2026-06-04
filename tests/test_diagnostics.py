@@ -311,6 +311,18 @@ def test_line_pressure_flat():
     assert "LINE_PRESSURE_FLAT" in _ids(_diag(df))
 
 
+def test_dead_line_pressure_channel_does_not_flag():
+    # Line Pressure present but reads 0 (no sensor wired) -> must NOT flag flat
+    n = 1200
+    rpm = np.r_[np.full(600, 800.0), np.full(600, 5000.0)]
+    tps = np.r_[np.full(600, 4.0), np.full(600, 90.0)]
+    df = pd.DataFrame({"Engine RPM": rpm, "Throttle Position": tps, "MAP": np.full(n, 60.0),
+                       "Coolant Temp": np.full(n, 195.0),
+                       "Gear": np.r_[np.full(600, 1.0), np.full(600, 2.0)],
+                       "Line Pressure": np.zeros(n)})
+    assert "LINE_PRESSURE_FLAT" not in _ids(_diag(df))
+
+
 # ---- cold start / warmup ----
 def _warmup_log(warmup_afr=14.7, ect_max=190.0, dur_s=400.0, ase_warm=0.0,
                 ase_neutral=0.0, n=2000):

@@ -62,6 +62,16 @@ def test_no_data():
     assert triage(_log(np.zeros(5)), COL).state == "NO_DATA"
 
 
+def test_no_crank_warm_engine_points_at_rpm_signal():
+    # RPM reads 0 but coolant is warm -> the engine ran; suspect the tach/RPM signal
+    df = _log(np.zeros(200))
+    df["ect"] = 194.0
+    r = triage(df, dict(COL, ect="ect"))
+    assert r.state == "NO_CRANK"
+    blob = (r.detail + " " + " ".join(r.recommendations)).lower()
+    assert "warm" in r.detail.lower() and ("tach" in blob or "rpm/tach" in blob)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
