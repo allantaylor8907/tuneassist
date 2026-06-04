@@ -71,20 +71,23 @@ def tier_spec(tier: str) -> CamSpec | None:
 def starting_points(cam: CamSpec) -> CamStartingPoints:
     """Conservative starting numbers for a cammed LS, by class."""
     klass = classify(cam)
+    # Idle-timing and airflow starting numbers per the Gen-3 LS playbook
+    # (tuning101 / Goat Rope Garage): cammed idle ~800-900 RPM, idle spark mild
+    # ~20-25 / aggressive ~28-30 deg, base running airflow ~+30-50% (x1.3-1.5).
     table = {
-        "stock":   ((14, 18), 600, [
+        "stock":   ((14, 18), 650, [
             "Stock-ish cam: factory idle/timing strategy is a fine baseline."]),
-        "mild":    ((18, 24), 700, [
-            "Mild cam: bump idle timing and idle RPM a touch; it dilutes more at idle.",
+        "mild":    ((20, 25), 800, [
+            "Mild cam: idle spark ~20-25 deg and idle target ~800 RPM is a good start.",
+            "Raise base running airflow ~30% (x1.3) so it idles without the IAC pegged.",
             "Low-RPM/light-load can usually take a little more advance -- verify with knock."]),
-        "big":     ((22, 28), 850, [
-            "Big cam: idle wants noticeably more timing and airflow to stay lit.",
-            "Bump base idle airflow substantially (often ~50% over stock in the 600-1000 "
-            "RPM range) and raise the idle-bypass/'percentage max' so the IAC has room.",
+        "big":     ((28, 30), 900, [
+            "Big cam: idle spark ~28-30 deg (more advance smooths the lope), idle ~900 RPM.",
+            "Raise base running airflow ~30-50% (x1.3-1.5) in the 600-1000 RPM range and open "
+            "the idle bypass / 'percentage max' so the IAC has room.",
             "Expect empty low-RPM VE cells; torque peak is higher -- prescribe higher-RPM drives.",
-            "Lower dynamic compression down low improves knock tolerance there (still verify).",
             "Watch idle MAP -- it'll be higher/unsteadier than stock; don't chase it as a leak."]),
-        "unknown": ((14, 20), 650, [
+        "unknown": ((16, 22), 700, [
             "No cam specs given: assuming a mild street baseline. Enter duration @ .050 "
             "and LSA for sharper idle/timing starting points."]),
     }

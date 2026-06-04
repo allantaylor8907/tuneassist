@@ -396,6 +396,25 @@ timing — never chase a detonation spiral.
 Thresholds live in `DiagnosticConfig`. Findings are advisory and ranked; the
 critical/safety ones (WOT lean, injector maxed, overheat, knock) sort to the top.
 
+## Credits & validated sources
+The Gen 3/4 GM methodology and many specific numbers are distilled from the
+community teaching of **Kyle at Goat Rope Garage / tuning101.com** (the user's
+own "Gen 3 LSx Tuning Playbook" condenses it), cross-checked with **HP Academy**
+technical articles and **HP Tuners** forum procedures. Specific values encoded
+from the playbook:
+- Cam idle: spark ~20-25° (mild) / ~28-30° (aggressive), idle ~800-900 RPM, base
+  running airflow ×1.3-1.5 (`cams.py`).
+- VE/MAF: damp the correction (the playbook's "paste-special × half"), converge to
+  ±2-3% erring slightly rich; MAF curve indexed by frequency; VE by RPM×MAP(kPa).
+- Spark: High-Octane table (RPM × cylinder air mass); add 1-2°/pass, pull 1-2° on
+  knock; "timing below base without knock ⇒ something else is pulling it (heat /
+  burst-knock)"; zero Burst Knock multiplier.
+- Power enrichment: NA ~12-12.5 AFR, boost ~11.5; PE enable throttle ~75% NA /
+  ~40% boost; **never disable PE** (richen it).
+- Transmission: firm shifts via Shift Pressures > Upshift (~×1.10 at a time),
+  reset adaptives; focus on pressures over speed.
+Recommendation-only, advisory, no warranty — see the playbook's disclaimer.
+
 ## Open ideas
 - Multi-pass convergence tracking persisted to disk (survives across runs).
 - LT (Gen 5, DI) airflow + Holley LT later — different airflow model, deferred.

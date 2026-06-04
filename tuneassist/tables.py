@@ -12,7 +12,7 @@ from __future__ import annotations
 _GM = {
     "ve":          "Main VE table (Engine > Airflow > Volumetric Efficiency)",
     "maf":         "MAF Calibration table (Airflow vs Frequency / Hz)",
-    "spark":       "High Octane spark table (Engine > Spark)",
+    "spark":       "High Octane spark table (Engine > Spark; RPM x cylinder air mass)",
     "iat_spark":   "IAT/charge-temp spark-retard table",
     "pe":          "Power Enrichment commanded-AFR/EQ table (Engine > Fuel > PE)",
     "startup_air": "Cranking Airflow + Startup Airflow Decay tables",
@@ -22,9 +22,9 @@ _GM = {
     "injector":    "injector flow-rate / injector data (Engine > Fuel > Injectors)",
     "warmup_enr":  "warmup (coolant-temp) enrichment table",
     "ase":         "afterstart / post-start enrichment table",
-    "shift_pts":   "WOT/part-throttle upshift tables (Transmission > Shift Speed/RPM)",
-    "line_pres":   "line/main pressure (EPC) tables",
-    "tcc":         "TCC lockup tables",
+    "shift_pts":   "upshift schedule (Transmission > Shift General > Shift Scheduling)",
+    "line_pres":   "Shift Pressures > Upshift (raise ~10% / x1.10 at a time to firm shifts)",
+    "tcc":         "TCC lockup / TCC Torque Reduction tables",
 }
 
 _HOLLEY = {

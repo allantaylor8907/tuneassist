@@ -30,8 +30,8 @@ class DiagnosticConfig:
     o2_suspect: float = 4.0       # wideband vs commanded gap % (closed loop)
     wot_map_min: float = 80.0     # kPa: WOT / power region
     wot_lean_afr: float = 13.0    # WOT measured AFR leaner than this = danger
-    wot_target_afr: float = 12.8  # NA pump WOT sweet spot (12.8-12.9 makes best power)
-    wot_rich_afr: float = 12.2    # richer than this at WOT = power left on table
+    wot_target_afr: float = 12.5  # NA pump WOT (playbook ~12-12.5; ~11.5 boosted)
+    wot_rich_afr: float = 12.0    # richer than this at WOT (NA) = power left on table
     trim_clip: float = 22.0       # |trim|% at/above this = hitting ECU authority limit
     batt_low: float = 12.8        # avg running voltage below this = charging/dead-time
     fp_low: float = 38.0          # base fuel pressure (psi) below this = too low for EFI
@@ -350,11 +350,13 @@ def _d_wot_fueling(df, col, cfg, dc, warm):
                            "medium")
         if 12.9 <= cmdmed < 13.7:                 # safe but leaving power on the table
             return Finding("WOT_TARGET_LEAN", "opportunity", "Richer WOT could make power",
-                           f"WOT target ~{cmdmed:.1f}; ~{dc.wot_target_afr:.1f} usually "
-                           "makes peak power on pump and adds knock margin.",
+                           f"WOT target ~{cmdmed:.1f}; ~{dc.wot_target_afr:.1f} (NA pump) "
+                           "usually makes peak power and adds knock margin.",
                            ["WOT AFR target set on the lean side"],
-                           [f"Try richening the WOT target toward ~{dc.wot_target_afr:.1f}, "
-                            "watch the wideband and knock.",
+                           [f"Richen the WOT/PE target toward ~{dc.wot_target_afr:.1f} NA "
+                            "(~11.5 boosted) -- watch the wideband and knock.",
+                            "Bring power-enrichment in sooner if it's lazy (throttle enable "
+                            "~75% NA, ~40% boosted). NEVER disable PE -- richen it instead.",
                             "Re-log; keep whatever makes the most power without knock."],
                            "medium")
         if afr < dc.wot_rich_afr and cmdmed < dc.wot_rich_afr:
@@ -437,7 +439,10 @@ def _d_knock(df, col, cfg, dc, warm):
                    causes,
                    ["Pull timing in the affected cells (observed retard + margin).",
                     "Address any lean/hot-IAT root cause first.",
-                    "Verify fuel octane and that knock sensors are healthy."], "high")
+                    "Verify fuel octane and that knock sensors are healthy.",
+                    "If timing reads below your base table WITHOUT real knock, something "
+                    "else is pulling it (hot IAT/ECT, or burst-knock anticipation -- "
+                    "zero the Burst Knock multiplier)."], "high")
 
 
 def _d_temps(df, col, cfg, dc, warm):
@@ -812,9 +817,10 @@ def _trans_findings(df, col, cfg, dc, platform="gm"):
                     f"~{float(load_lp.median()):.0f} at high throttle. It should climb with "
                     "throttle to clamp the clutches under power; flat pressure lets shifts "
                     "slip and burn.",
-                    ["line/EPC pressure-vs-throttle set low"],
-                    [f"Raise line pressure under throttle for firmer shifts and clutch life "
-                     f"-- the {table(platform, 'line_pres')}."], "low"))
+                    ["line/shift pressure-vs-throttle set low"],
+                    [f"Firm the shifts via the {table(platform, 'line_pres')}; reset the "
+                     "shift adaptives afterward so they relearn from the new pressure."],
+                    "low"))
     return out
 
 
