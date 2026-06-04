@@ -66,6 +66,32 @@ def test_prescription_uses_holley_language():
     assert "speed-density" not in blob and "maf" not in blob   # no GM jargon
 
 
+SNIPER = os.path.join(os.path.dirname(__file__), "fixtures", "sniper_sample.csv")
+
+
+def test_sniper_v2_resolves_and_avoids_traps():
+    col = holley.resolve_holley(holley.load_holley_csv(SNIPER))
+    assert col["rpm"] == "RPM" and col["map"] == "MAP" and col["afr_actual"] == "AFR"
+    assert col["afr_target"] == "Target AFR" and col["learn"] == "Current Learn"
+    assert col["battery"] == "Battery" and col["speed"] == "Speed"
+    # 'Fuel Press Switch' is a switch, not a pressure -> must NOT resolve as fuelpres
+    assert "fuelpres" not in col
+    # Sniper V2 has no knock sensor
+    assert "knock" not in col
+
+
+def test_sniper_v2_detected_and_analyzes():
+    cr = analyze_log(SNIPER, SessionOpts(cfg=Config(), tune_spark=True))
+    assert cr.platform == "holley"
+    assert cr.triage.state == "RUNNING_DRIVE" and cr.has_grid
+    # a well-tuned driving log: no false idle-hunt from decel/coast samples,
+    # no false low-fuel-pressure from the pressure switch
+    ids = {f.id for f in cr.findings}
+    assert "IDLE_HUNT" not in ids
+    assert "LOW_FUEL_PRESSURE" not in ids
+    assert "APPLY_FUEL" in ids        # the base-fuel correction is the lead item
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

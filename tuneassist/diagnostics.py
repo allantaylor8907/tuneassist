@@ -52,7 +52,7 @@ class DiagnosticConfig:
     warmup_min_duration_s: float = 240.0  # only judge "never warmed" over a long log
     ase_warm_pct: float = 2.0       # afterstart/warmup enrichment still active when warm
     # --- idle quality ---
-    idle_hunt_std: float = 75.0     # idle RPM std above this = hunting/surging
+    idle_hunt_std: float = 90.0     # trimmed idle-RPM std above this = hunting/surging
     idle_rpm_tol: float = 150.0     # actual vs target idle RPM gap that matters
     idle_afr_rich: float = 13.2     # idle AFR richer than this = over-rich idle
     idle_afr_lean: float = 15.3     # idle AFR leaner than this = lean idle
@@ -99,6 +99,27 @@ def _total_trim(df, col):
     s = df[st].apply(pd.to_numeric, errors="coerce").mean(axis=1).fillna(0)
     l = df[lt].apply(pd.to_numeric, errors="coerce").mean(axis=1).fillna(0)
     return s + l
+
+
+def _idle_mask(df, col, warm):
+    """A *true* idle mask. The trap: closed-throttle decel/coast-down also has low
+    TPS and a wide RPM ramp, which inflates 'idle hunting'. Real idle is the engine
+    stopped at low RPM with manifold pressure in the idle range (NOT the deep
+    vacuum of decel), so we gate on MAP and, when present, vehicle speed."""
+    rpm = _num(df, col, "rpm")
+    if rpm is None:
+        return None
+    m = warm & (rpm > 500) & (rpm < 1100)
+    tps = _num(df, col, "tps")
+    if tps is not None:
+        m &= tps < 5
+    mapk = _num(df, col, "map")
+    if mapk is not None:
+        m &= (mapk >= 35) & (mapk <= 62)     # idle vacuum; excludes decel (low) / load (high)
+    spd = _num(df, col, "speed")
+    if spd is not None:
+        m &= spd < 3                          # stopped, not coasting
+    return m
 
 
 def _applied_correction(df, col):
@@ -164,13 +185,9 @@ def _d_cruise_trim(df, col, cfg, dc, warm):
 
 
 def _idle_trim(df, col, trim, warm):
-    rpm = _num(df, col, "rpm")
-    if rpm is None:
+    idle = _idle_mask(df, col, warm)
+    if idle is None:
         return None
-    idle = warm & (rpm > 500) & (rpm < 1100)
-    tps = _num(df, col, "tps")
-    if tps is not None:
-        idle &= tps < 8
     vals = trim[idle].dropna()
     return float(vals.mean()) if len(vals) > 20 else None
 
@@ -187,11 +204,9 @@ def _d_vacuum_leak(df, col, cfg, dc, warm, cam_class=None):
     mapk = _num(df, col, "map")
     if corr is None or rpm is None or mapk is None:
         return None
-    tps = _num(df, col, "tps")
-
-    idle = warm & (rpm > 500) & (rpm < 1100)
-    if tps is not None:
-        idle &= tps < 8
+    idle = _idle_mask(df, col, warm)
+    if idle is None:
+        return None
     # cruise bands gated above idle RPM so idle samples don't dilute the reference
     light = warm & (mapk >= 35) & (mapk < 55) & (rpm > 1300)
     mid = warm & (mapk >= 55) & (mapk < dc.wot_map_min) & (rpm > 1300)
@@ -723,19 +738,19 @@ def _idle_findings(df, col, cfg, dc, warm):
     idle-timing fighting. Uses warm idle samples only."""
     out = []
     rpm = _num(df, col, "rpm")
-    if rpm is None:
+    idle = _idle_mask(df, col, warm)
+    if rpm is None or idle is None:
         return out
-    idle = warm & (rpm > 500) & (rpm < 1300)
-    tps = _num(df, col, "tps")
-    if tps is not None:
-        idle &= tps < 8
     ridle = rpm[idle].dropna()
     if len(ridle) < 40:
         return out
     idle_rpm = float(ridle.median())
 
-    # Hunting / surging
-    std = float(ridle.std())
+    # Hunting / surging -- trimmed std (drop the 5% tails) so a brief blip or the
+    # moment of coming to a stop doesn't read as a hunt.
+    lo, hi = ridle.quantile(0.05), ridle.quantile(0.95)
+    trimmed = ridle[(ridle >= lo) & (ridle <= hi)]
+    std = float(trimmed.std()) if len(trimmed) > 10 else float(ridle.std())
     if std > dc.idle_hunt_std:
         out.append(Finding(
             "IDLE_HUNT", "warning", "Idle is hunting / surging",

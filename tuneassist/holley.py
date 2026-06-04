@@ -57,9 +57,10 @@ HOLLEY_PATTERNS = {
     "injpw":     [r"inj.*pw", r"pulse.?width", r"\bpw\b"],
     "duty":      [r"duty"],
     "baro":      [r"\bbaro\b", r"barometric"],
-    "fuelpres":  [r"fuel.*pres"],
+    "fuelpres":  [r"fuel.*pres(?!.*sw)"],   # not 'Fuel Press Switch'
     "boost":     [r"boost"],
     "battery":   [r"\bbattery\b", r"\bvolts?\b"],
+    "speed":     [r"^speed$", r"vehicle.*speed", r"\bmph\b"],
     "iac":         [r"iac position", r"\biac\b"],
     "idle_target": [r"target idle", r"desired idle"],
     "ase":         [r"afterstart", r"after.?start"],

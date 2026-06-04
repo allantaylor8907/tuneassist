@@ -114,7 +114,11 @@ pattern — so it's context, not noise.
 - `protuner12` CSV: REJECTED — spark/diag log, no RPM/fuel channels.
 - `holley_sample` CSV (Terminator X): RUNNING_DRIVE; Learn-based base-fuel
   correction ~−18% (ECU had learned ~−20%); WOT actual≈commanded 13.2 → a power
-  *opportunity* (richen toward 12.6), NOT a false lean; no narrowband finding.
+  *opportunity* (richen toward 12.8), NOT a false lean; no narrowband finding.
+- `sniper_sample` CSV (Sniper V2): RUNNING_DRIVE; small base-fuel correction
+  (well-tuned). No knock channel (Sniper has none). `Fuel Press Switch` must NOT
+  resolve as fuel pressure. No false IDLE_HUNT (decel/coast excluded via the
+  MAP+speed idle mask).
 
 ## 9. The GM Gen 3/4 airflow model, and the VE-then-MAF order of operations
 A Gen 3/4 LS PCM estimates cylinder airmass two ways and blends them:

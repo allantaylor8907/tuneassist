@@ -141,7 +141,12 @@ Remaining:
    diagnosis (no narrowband finding; lean-but-on-target WOT → power opportunity)
    and base-fuel prescription language. Remaining Holley: Sniper/Dominator label
    variants, and spark on Holley still borrows GM patterns (works on this file).
-2. `prescribe("TUNE_MAF", …)` text reads as a VE→MAF transition even when the user
+2. Validated on **Sniper V2** (`tests/fixtures/sniper_sample.csv`): same Holley
+   loader works; no knock channel; `Fuel Press Switch` excluded from `fuelpres`;
+   `speed`/`battery` resolve. Idle detection now uses a shared `_idle_mask`
+   (MAP-window + vehicle-speed) so decel/coast no longer false-flags IDLE_HUNT
+   (trimmed std, threshold 90).
+3. `prescribe("TUNE_MAF", …)` text reads as a VE→MAF transition even when the user
    is already in MAF mode with residual cruise error — reword to be mode-neutral.
 3. LT (Gen 5, DI) airflow model + Holley LT — deferred, different airflow model.
 DONE since: per-vehicle disk persistence (`garage.py`) — each vehicle remembers
