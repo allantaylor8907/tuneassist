@@ -227,22 +227,40 @@ def build_spark(spark):
 
 
 def build_maf(corr, counts):
+    """MAF correction as a SINGLE ROW with frequency across the columns -- the
+    same shape as the HPTuners 'Airflow vs Frequency' table you paste into."""
     if corr is None or corr.dropna().empty:
         return None
-    t = Table(title="MAF CURVE CORRECTION  (apply to MAF cal table, by frequency)",
-              box=box.MINIMAL, header_style="bold grey70", title_style="bold")
-    t.add_column("MAF Hz", justify="right"); t.add_column("change", justify="right")
-    t.add_column("samples", justify="right", style="grey50")
+    cells = []
     for fb in corr.index:
         v = corr.loc[fb]
         if pd.isna(v):
             continue
-        change = (v - 1.0) * 100.0
-        sign = "+" if change >= 0 else ""
         n = int(counts.loc[fb]) if counts is not None and fb in counts.index else 0
-        t.add_row(_interval_label(fb),
-                  Text(f"{sign}{change:.1f}%", style=_pct_style(change)), str(n))
-    return Group(t, Text("  These go on the MAF calibration (Hz axis), not the VE table.",
+        # label by the frequency breakpoint (bucket start), like the editor's axis
+        try:
+            lab = str(int(fb.left))
+        except (AttributeError, ValueError, TypeError):
+            lab = _interval_label(fb)
+        cells.append((lab, (v - 1.0) * 100.0, n))
+    if not cells:
+        return None
+    t = Table(title="MAF CURVE CORRECTION  (1 row, frequency across -- matches "
+              "HPTuners 'Airflow vs Frequency')",
+              box=box.SIMPLE_HEAVY, header_style="bold grey70", title_style="bold",
+              pad_edge=False)
+    t.add_column("Hz", style="bold grey70")
+    for lab, _v, _n in cells:
+        t.add_column(lab, justify="center")
+    pct_row = [Text("% chg", style="bold grey70")]
+    for _lab, change, _n in cells:
+        sign = "+" if change >= 0 else ""
+        pct_row.append(Text(f"{sign}{change:.1f}", style=_pct_style(change)))
+    t.add_row(*pct_row)
+    t.add_row(Text("n", style="grey50"),
+              *[Text(str(n), style="grey50") for _l, _c, n in cells])
+    return Group(t, Text("  One row indexed by frequency -- paste into the MAF cal "
+                         "(Airflow vs Frequency), multiply-by-percent. Not the VE table.",
                          style="grey70"))
 
 
