@@ -1148,52 +1148,72 @@ def _idle_findings(df, col, cfg, dc, warm, cam_class=None):
     return out
 
 
-def _d_logging_tips(df, col, cfg, dc, warm, platform="gm"):
+def _d_logging_tips(df, col, cfg, dc, warm, platform="gm", stage=None):
     """The 'logging coach': tell the user which MISSING channels would unlock more
-    analysis next time. A detector that degrades silently when a channel is absent
-    is invisible to the user -- this makes the gap (and the payoff) explicit. Only
-    suggests high-value channels that are actually absent; capped so it stays a
-    nudge, not noise."""
-    tips = []          # (priority, text)
+    analysis. A detector that degrades silently when a channel is absent is
+    invisible to the user -- this makes the gap (and the payoff) explicit.
+
+    Stage-aware: each tip is tagged with the journey stage where it STARTS to
+    matter, and we only surface tips relevant to the current stage or the next
+    one ('about to matter'). That keeps us from nagging about MAF frequency or
+    commanded timing while the user is still just trying to dial in the idle.
+    When `stage` is None we show everything (back-compat / stage-agnostic calls).
+    Each tip is (priority, relevance_stage, text); only absent channels qualify."""
+    tips = []
     has = lambda *ks: any(k in col for k in ks)
 
     if platform == "holley":
         # Holley logs the wideband + Learn/CL-comp natively; the usual gap is knock.
-        if "knock" not in col:
-            tips.append((2, "Ignition retard / knock (if your ECU + sensor support it) -- "
-                            "without it the tool won't recommend timing changes."))
         if not has("afr_actual"):
-            tips.append((1, "Wideband AFR (O2 #1) -- it's the control sensor; the base-fuel "
-                            "correction and WOT checks depend on it."))
+            tips.append((1, "STABILIZE_IDLE",
+                         "Wideband AFR (O2 #1) -- it's the control sensor; the base-fuel "
+                         "correction and WOT checks depend on it."))
+        if "knock" not in col:
+            tips.append((2, "TUNE_POWER",
+                         "Ignition retard / knock (if your ECU + sensor support it) -- "
+                         "without it the tool won't recommend timing changes."))
     else:  # GM / HPTuners
-        if "knock" not in col:
-            tips.append((0, "Knock Retard -- REQUIRED for any spark/timing work (knock-pull "
-                            "recommendations and knock root-cause)."))
         if not has("afr_actual"):
-            tips.append((1, "Wideband AFR -- the only valid fuel feedback at WOT/open-loop, "
-                            "and it enables the wideband-vs-narrowband cross-check."))
+            tips.append((1, "DIAL_IDLE_CRUISE",
+                         "Wideband AFR -- the only valid fuel feedback at WOT/open-loop, "
+                         "and it enables the wideband-vs-narrowband cross-check."))
+        if has("stft", "ltft") and not has("stft2", "ltft2"):
+            tips.append((1, "DIAL_IDLE_CRUISE",
+                         "Fuel Trims Bank 2 (STFT/LTFT B2) -- enables bank-imbalance and "
+                         "one-bank fault detection (dead O2, exhaust leak, one-bank injector)."))
+        if "iat" not in col:
+            tips.append((2, "TUNE_VE_SD",
+                         "Intake Air Temp (IAT) -- lets the tool separate heat-pulled "
+                         "timing from real knock and flag heat-soak / density loss."))
+        if "maf_freq" not in col and has("maf_air"):
+            tips.append((2, "TUNE_MAF",
+                         "MAF Frequency (Hz) -- needed to build the MAF-curve correction "
+                         "(the Airflow-vs-Frequency table) instead of just g/s."))
+        if "knock" not in col:
+            tips.append((0, "TUNE_POWER",
+                         "Knock Retard -- REQUIRED for any spark/timing work (knock-pull "
+                         "recommendations and knock root-cause)."))
+        if "fuelpres" not in col:
+            tips.append((3, "TUNE_POWER",
+                         "Fuel Pressure -- catches a weak pump / pressure drop under load "
+                         "before it leans the engine out."))
         # actual spark logged but no commanded/desired-timing PID -> can't do the delta
         _act, _cmd = _timing_cols(df, col)
         if _act is not None and _cmd is None:
-            tips.append((2, "Commanded/Desired Spark Timing -- unlocks the commanded-vs-actual "
-                            "timing check (is a modifier pulling timing, and is it knock or heat?)."))
-        if "iat" not in col:
-            tips.append((3, "Intake Air Temp (IAT) -- lets the tool separate heat-pulled "
-                            "timing from real knock and flag heat-soak / density loss."))
-        if has("stft", "ltft") and not has("stft2", "ltft2"):
-            tips.append((3, "Fuel Trims Bank 2 (STFT/LTFT B2) -- enables bank-imbalance and "
-                            "one-bank fault detection (dead O2, exhaust leak, one-bank injector)."))
-        if "fuelpres" not in col:
-            tips.append((4, "Fuel Pressure -- catches a weak pump / pressure drop under load "
-                            "before it leans the engine out."))
-        if "maf_freq" not in col and has("maf_air"):
-            tips.append((4, "MAF Frequency (Hz) -- needed to build the MAF-curve correction "
-                            "(the Airflow-vs-Frequency table) instead of just g/s."))
+            tips.append((2, "TUNE_SPARK",
+                         "Commanded/Desired Spark Timing -- unlocks the commanded-vs-actual "
+                         "timing check (is a modifier pulling timing, and is it knock or heat?)."))
+
+    # Stage gate: keep tips whose relevance is at/before the next stage.
+    if stage is not None:
+        from .stages import STAGE_ORDER
+        cur = STAGE_ORDER.get(stage, 0)
+        tips = [t for t in tips if STAGE_ORDER.get(t[1], 0) <= cur + 1]
 
     if not tips:
         return None
     tips.sort(key=lambda t: t[0])
-    picks = [t for _p, t in tips[:4]]
+    picks = [text for _p, _s, text in tips[:4]]
     return Finding("LOGGING_TIPS", "info",
                    "Log these channels next to unlock more analysis",
                    "Some high-value channels aren't in this log. Add them in your scanner's "
@@ -1216,8 +1236,11 @@ _PLATFORM_SKIP = {"holley": {"WB_VS_NB"}}
 
 
 def diagnose(df: pd.DataFrame, col: dict, cfg, dc: DiagnosticConfig | None = None,
-             platform: str = "gm", profile=None, cam_class=None) -> list:
-    """Run all detectors and return Findings sorted by severity then confidence."""
+             platform: str = "gm", profile=None, cam_class=None, stage=None) -> list:
+    """Run all detectors and return Findings sorted by severity then confidence.
+
+    `stage` (optional journey-stage key) gates the logging-coach nudges so they
+    only surface channels relevant to where the build is now."""
     dc = dc or DiagnosticConfig()
     warm = _warm_mask(df, col, getattr(cfg, "ect_min_f", 160.0))
     skip = _PLATFORM_SKIP.get(platform, set())
@@ -1251,7 +1274,7 @@ def diagnose(df: pd.DataFrame, col: dict, cfg, dc: DiagnosticConfig | None = Non
         except Exception:    # pragma: no cover - defensive
             continue
     try:
-        tip = _d_logging_tips(df, col, cfg, dc, warm, platform)
+        tip = _d_logging_tips(df, col, cfg, dc, warm, platform, stage)
         if tip is not None and tip.id not in skip:
             findings.append(tip)
     except Exception:        # pragma: no cover - defensive

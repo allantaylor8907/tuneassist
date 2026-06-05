@@ -362,6 +362,14 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
             except Exception as e:   # pragma: no cover - defensive
                 notes.append(f"Spark analysis skipped: {e}")
 
+    # Determine the journey stage first -- the diagnostics' logging coach gates
+    # its channel nudges by stage, so it needs to know where the build is.
+    spark_has_work = bool(spark and spark.can_run and
+                          (spark.knock_cells or (spark.action is not None and
+                           (spark.action.stack() == "ADD").any())))
+    stage = stages.determine_stage(tr.state, summary, airflow_mode=opts.airflow_mode,
+                                   tune_spark=opts.tune_spark, spark_has_work=spark_has_work)
+
     # Pattern-based diagnosis (symptom -> cause -> correction). Runs on any
     # running log; normalize Holley channel names to the canonical keys first.
     findings = []
@@ -373,7 +381,8 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
         cam_class = getattr(opts.cam_points, "klass", None)
         try:
             findings = diagnostics.diagnose(df, dcol, cfg, platform=platform,
-                                            profile=opts.profile, cam_class=cam_class)
+                                            profile=opts.profile, cam_class=cam_class,
+                                            stage=stage)
         except Exception as e:   # pragma: no cover - defensive
             notes.append(f"Diagnostics skipped: {e}")
         # The main fuel/VE correction is itself a change to apply -- make it the
@@ -394,12 +403,6 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
             _apply_mod_insights(findings, summary, result, mods)
         # Point each finding at the EXACT vendor table to edit.
         _name_tables(findings, platform)
-
-    spark_has_work = bool(spark and spark.can_run and
-                          (spark.knock_cells or (spark.action is not None and
-                           (spark.action.stack() == "ADD").any())))
-    stage = stages.determine_stage(tr.state, summary, airflow_mode=opts.airflow_mode,
-                                   tune_spark=opts.tune_spark, spark_has_work=spark_has_work)
 
     # If the engine ran but every sample was filtered out, explain the blocker
     # rather than giving generic "go drive" advice.

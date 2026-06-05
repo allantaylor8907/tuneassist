@@ -238,6 +238,35 @@ def test_logging_tips_nudges_missing_channels():
     assert "knock" in blob and "wideband" in blob
 
 
+def test_logging_tips_are_stage_gated():
+    # well-instrumented EXCEPT commanded-timing and MAF-frequency, so those two
+    # are the only nudges -- isolating the stage gate. Commanded-timing only
+    # matters at the spark stage; MAF-Hz once airflow tuning is near.
+    df = _base()
+    df["Short Term Fuel Trim Bank 1"] = 2.0
+    df["Long Term Fuel Trim Bank 1"] = 0.0
+    df["Short Term Fuel Trim Bank 2"] = 2.0
+    df["Long Term Fuel Trim Bank 2"] = 0.0
+    df["Knock Retard"] = 0.0
+    df["Wideband AFR"] = 14.7
+    df["Intake Air Temp"] = 90.0
+    df["Fuel Pressure"] = 58.0
+    df["Spark Advance"] = 22.0           # actual, but no commanded PID
+    df["Mass Air Flow"] = 8.0            # has MAF but no frequency channel
+
+    def tips(stage):
+        f = [x for x in diagnose(df, resolve_columns(df), Config(), stage=stage)
+             if x.id == "LOGGING_TIPS"]
+        return " ".join(f[0].corrections).lower() if f else ""
+
+    early = tips("STABILIZE_IDLE")       # too soon for either
+    assert "commanded" not in early and "maf frequency" not in early
+    near_maf = tips("TUNE_VE_SD")        # next stage is TUNE_MAF
+    assert "maf frequency" in near_maf and "commanded" not in near_maf
+    spark = tips("TUNE_POWER")           # next stage is TUNE_SPARK
+    assert "commanded" in spark
+
+
 def test_logging_tips_silent_when_well_instrumented():
     # everything the coach would ask for is present -> no nudge
     df = _base()
