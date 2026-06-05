@@ -352,7 +352,9 @@ def prescribe(stage: str, summary: AnalysisSummary, triage_recs: list,
             drive="Repeat the WOT pulls after EACH small timing change -- one change, "
                   "one pull, re-log. Never add a chunk and send it.",
             capture=(_GM_CHANNELS if gm else ["RPM", "MAP", "AFR", "Target AFR", "CTS"]) +
-                    ["Knock retard (required)", "Spark advance", "Wideband AFR", "IAT"],
+                    ["Knock retard (required)", "Spark advance (actual)",
+                     "Commanded/Desired spark timing (enables commanded-vs-actual check)",
+                     "Wideband AFR", "IAT"],
         )
 
     # CONVERGED

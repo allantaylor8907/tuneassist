@@ -230,6 +230,30 @@ def test_timing_below_command_without_knock_points_at_blend():
     assert "octane" in blob or "blend" in blob
 
 
+def test_logging_tips_nudges_missing_channels():
+    # a sparse GM log (no knock/wideband/IAT) -> coach lists what to add
+    f = [x for x in _diag(_base()) if x.id == "LOGGING_TIPS"]
+    assert f, "expected a LOGGING_TIPS nudge on a sparse log"
+    blob = " ".join(f[0].corrections).lower()
+    assert "knock" in blob and "wideband" in blob
+
+
+def test_logging_tips_silent_when_well_instrumented():
+    # everything the coach would ask for is present -> no nudge
+    df = _base()
+    df["Short Term Fuel Trim Bank 1"] = 2.0
+    df["Long Term Fuel Trim Bank 1"] = 0.0
+    df["Short Term Fuel Trim Bank 2"] = 2.0
+    df["Long Term Fuel Trim Bank 2"] = 0.0
+    df["Knock Retard"] = 0.0
+    df["Wideband AFR"] = 14.7
+    df["Intake Air Temp"] = 90.0
+    df["Fuel Pressure"] = 58.0
+    df["Spark Advance"] = 22.0
+    df["Commanded Spark Advance"] = 22.0
+    assert "LOGGING_TIPS" not in _ids(_diag(df))
+
+
 def test_low_voltage():
     df = _base()
     df["Battery Voltage"] = 12.1

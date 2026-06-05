@@ -1148,6 +1148,60 @@ def _idle_findings(df, col, cfg, dc, warm, cam_class=None):
     return out
 
 
+def _d_logging_tips(df, col, cfg, dc, warm, platform="gm"):
+    """The 'logging coach': tell the user which MISSING channels would unlock more
+    analysis next time. A detector that degrades silently when a channel is absent
+    is invisible to the user -- this makes the gap (and the payoff) explicit. Only
+    suggests high-value channels that are actually absent; capped so it stays a
+    nudge, not noise."""
+    tips = []          # (priority, text)
+    has = lambda *ks: any(k in col for k in ks)
+
+    if platform == "holley":
+        # Holley logs the wideband + Learn/CL-comp natively; the usual gap is knock.
+        if "knock" not in col:
+            tips.append((2, "Ignition retard / knock (if your ECU + sensor support it) -- "
+                            "without it the tool won't recommend timing changes."))
+        if not has("afr_actual"):
+            tips.append((1, "Wideband AFR (O2 #1) -- it's the control sensor; the base-fuel "
+                            "correction and WOT checks depend on it."))
+    else:  # GM / HPTuners
+        if "knock" not in col:
+            tips.append((0, "Knock Retard -- REQUIRED for any spark/timing work (knock-pull "
+                            "recommendations and knock root-cause)."))
+        if not has("afr_actual"):
+            tips.append((1, "Wideband AFR -- the only valid fuel feedback at WOT/open-loop, "
+                            "and it enables the wideband-vs-narrowband cross-check."))
+        # actual spark logged but no commanded/desired-timing PID -> can't do the delta
+        _act, _cmd = _timing_cols(df, col)
+        if _act is not None and _cmd is None:
+            tips.append((2, "Commanded/Desired Spark Timing -- unlocks the commanded-vs-actual "
+                            "timing check (is a modifier pulling timing, and is it knock or heat?)."))
+        if "iat" not in col:
+            tips.append((3, "Intake Air Temp (IAT) -- lets the tool separate heat-pulled "
+                            "timing from real knock and flag heat-soak / density loss."))
+        if has("stft", "ltft") and not has("stft2", "ltft2"):
+            tips.append((3, "Fuel Trims Bank 2 (STFT/LTFT B2) -- enables bank-imbalance and "
+                            "one-bank fault detection (dead O2, exhaust leak, one-bank injector)."))
+        if "fuelpres" not in col:
+            tips.append((4, "Fuel Pressure -- catches a weak pump / pressure drop under load "
+                            "before it leans the engine out."))
+        if "maf_freq" not in col and has("maf_air"):
+            tips.append((4, "MAF Frequency (Hz) -- needed to build the MAF-curve correction "
+                            "(the Airflow-vs-Frequency table) instead of just g/s."))
+
+    if not tips:
+        return None
+    tips.sort(key=lambda t: t[0])
+    picks = [t for _p, t in tips[:4]]
+    return Finding("LOGGING_TIPS", "info",
+                   "Log these channels next to unlock more analysis",
+                   "Some high-value channels aren't in this log. Add them in your scanner's "
+                   "channel/PID list before the next capture to enable more checks.",
+                   ["(these are logging suggestions, not faults)"],
+                   picks, "low")
+
+
 _DETECTORS = [_d_cruise_trim, _d_bank_imbalance, _d_wb_vs_commanded,
               _d_wot_fueling, _d_injector_duty, _d_trim_clipping, _d_low_voltage,
               _d_low_fuel_pressure, _d_knock, _d_timing_vs_command, _d_temps,
@@ -1196,6 +1250,12 @@ def diagnose(df: pd.DataFrame, col: dict, cfg, dc: DiagnosticConfig | None = Non
                     findings.append(f)
         except Exception:    # pragma: no cover - defensive
             continue
+    try:
+        tip = _d_logging_tips(df, col, cfg, dc, warm, platform)
+        if tip is not None and tip.id not in skip:
+            findings.append(tip)
+    except Exception:        # pragma: no cover - defensive
+        pass
     conf_rank = {"high": 0, "medium": 1, "low": 2}
     findings.sort(key=lambda f: (SEVERITY_RANK.get(f.severity, 9),
                                  conf_rank.get(f.confidence, 9)))
