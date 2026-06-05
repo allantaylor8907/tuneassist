@@ -9,19 +9,24 @@ Supports **GM / HPTuners** (Gen 3/4 LS, speed-density) and **Holley EFI**
 
 ## Screenshots
 
-The Textual UI — garage, setup, and the analysis screen (journey bar, diagnosis,
-correction heatmap, and the "next step" card):
+The Textual UI. **The analysis screen** — journey bar, plain-language diagnosis,
+the fuel/VE correction, and the "next step" card:
 
-| Garage | Setup | Analysis report |
-|---|---|---|
-| ![Garage](docs/images/01-garage.svg) | ![Setup](docs/images/02-setup.svg) | ![Report](docs/images/04-report.svg) |
+<p align="center"><img src="docs/images/04-report.svg" width="100%" alt="Analysis report"></p>
 
-| Correction grid (RPM × MAP) | Top cells (sortable) |
-|---|---|
-| ![Correction grid](docs/images/05-correction-grid.svg) | ![Top cells](docs/images/06-top-cells.svg) |
+**Interactive correction grid** (RPM × MAP, sortable cell detail):
 
-> Regenerate these any time with `python tools/capture_screens.py`. See
-> [docs/images/README.md](docs/images/README.md) for recording an animated GIF.
+<p align="center"><img src="docs/images/05-correction-grid.svg" width="100%" alt="Correction grid"></p>
+
+**Garage** (pick / create / quick-scan) and the **setup form** (engine preset, mods, cam tier):
+
+<p align="center">
+  <img src="docs/images/01-garage.svg" width="49%" alt="Garage">
+  <img src="docs/images/02-setup.svg" width="49%" alt="Setup">
+</p>
+
+> Vector SVGs — sharp at any zoom. Regenerate with `python tools/capture_screens.py`.
+> See [docs/images/README.md](docs/images/README.md) for recording an animated GIF.
 
 ## Install / run
 

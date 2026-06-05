@@ -21,7 +21,9 @@ This drives the app through Textual's pilot harness, analyzes the bundled
 | `06-top-cells.svg`        | sortable "top cells" table |
 
 The theme shown is the default (**textual-dark**); press **Ctrl+T** in the app
-to try the others.
+to try the others. The capture size is set in `tools/capture_screens.py`
+(`SIZE`) — deliberately narrow-and-tall (110×50) so each character renders large
+when GitHub scales the SVG to the README's width.
 
 ## Recording an animated GIF
 

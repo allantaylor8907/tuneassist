@@ -21,7 +21,10 @@ from tuneassist.tui import TuneAssistApp  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "docs", "images")
 RIDE = os.path.join(ROOT, "tests", "fixtures", "ride42.csv")
-SIZE = (132, 44)
+# Narrower + taller than a typical terminal: when GitHub scales the SVG to the
+# README's content width, fewer columns means each character renders LARGER (more
+# legible), and the extra rows show more of each screen without scrolling.
+SIZE = (110, 50)
 
 
 def _press(screen, button_id):
