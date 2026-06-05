@@ -74,7 +74,7 @@ def build_banner():
         # subtle vertical gradient blue -> cyan
         shade = ["#5e81ac", "#81a1c1", "#88c0d0", "#8fbcbb"][i % 4]
         art.append(line + "\n", style=f"bold {shade}")
-    sub = Text("AI-assisted, recommendation-only engine tuning   "
+    sub = Text("recommendation-only tuning analysis   "
                "it advises, you apply.", style="italic grey66")
     return Panel(Align.center(Group(Align.center(art), Align.center(sub))),
                  box=box.HEAVY, border_style="#81a1c1", padding=(1, 2))

@@ -108,7 +108,9 @@ def main(argv=None):
     p.add_argument("--batch", action="store_true",
                    help="non-interactive: print the plain report and exit")
     p.add_argument("--tui", action="store_true",
-                   help="launch the full Textual UI (mouse + keyboard)")
+                   help="launch the full Textual UI (this is the default with no args)")
+    p.add_argument("--wizard", action="store_true",
+                   help="use the classic guided text session instead of the Textual UI")
     p.add_argument("--demo", action="store_true",
                    help="launch the locked-down demo (bundled sample logs only)")
     p.add_argument("--json", action="store_true",
@@ -169,10 +171,19 @@ def main(argv=None):
         _print_update_notice()
         run(args.log, args.platform, args.out_dir)
         return
-    # Default: the beautiful, guided, multi-pass session (wizard.py).
-    _print_update_notice()
-    from .wizard import run_session
-    run_session(initial_log=args.log, out_dir=args.out_dir)
+
+    # Classic guided text session: when explicitly asked for, or when a log path
+    # is handed in directly (that flow is path-aware; the TUI starts from the
+    # garage instead).
+    if args.wizard or args.log:
+        _print_update_notice()
+        from .wizard import run_session
+        run_session(initial_log=args.log, out_dir=args.out_dir)
+        return
+
+    # Default (e.g. double-clicking the downloaded binary): the full Textual UI.
+    from .tui import run_tui
+    run_tui()
 
 
 if __name__ == "__main__":

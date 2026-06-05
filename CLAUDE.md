@@ -108,8 +108,10 @@ tunable state.
   `.lnk` via WScript.Shell COM, macOS `.command`, Linux `.desktop` (+ app-menu
   entry). Resolves the launch target for frozen binary vs pip/console-script vs
   `python -m`. Writers factored for testing; paths with spaces quoted. Tested.
-- `cli.py` — orchestrator. No args/log path → Rich wizard; `--tui` → Textual app;
-  `--demo` → locked-down demo; `--batch` → plain report; `--json` → headless JSON.
+- `cli.py` — orchestrator. No args → Textual app (the default, so the downloaded
+  binary opens the UI on double-click); `--wizard` or a bare log path → classic
+  Rich guided session; `--tui` → Textual app; `--demo` → locked-down demo;
+  `--batch` → plain report; `--json` → headless JSON.
   `--version`, `--check-update`, `--update`, `--install-shortcut`; a throttled
   one-line update notice precedes the wizard/batch flows. Version is
   single-sourced in `tuneassist/__init__.py` (`__version__`); pyproject reads it

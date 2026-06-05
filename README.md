@@ -54,12 +54,13 @@ OS from the [Releases page](https://github.com/allantaylor8907/tuneassist/releas
 
 | OS | File | Run it |
 |---|---|---|
-| Windows | `tuneassist-windows-x64.exe` | double-click, or `tuneassist-windows-x64.exe --tui` |
-| macOS | `tuneassist-macos-arm64` | `chmod +x tuneassist-macos-arm64 && ./tuneassist-macos-arm64 --tui` |
-| Linux | `tuneassist-linux-x64` | `chmod +x tuneassist-linux-x64 && ./tuneassist-linux-x64 --tui` |
+| Windows | `tuneassist-windows-x64.exe` | double-click it |
+| macOS | `tuneassist-macos-arm64` | `chmod +x tuneassist-macos-arm64 && ./tuneassist-macos-arm64` |
+| Linux | `tuneassist-linux-x64` | `chmod +x tuneassist-linux-x64 && ./tuneassist-linux-x64` |
 
-On macOS the first launch may get blocked because it's unsigned — right-click →
-Open, or run `xattr -d com.apple.quarantine ./tuneassist-macos-arm64`.
+Running it with no arguments opens the full UI. On macOS the first launch may get
+blocked because it's unsigned — right-click → Open, or run
+`xattr -d com.apple.quarantine ./tuneassist-macos-arm64`.
 
 **Want a desktop icon?** One command drops a double-clickable launcher on your
 desktop (`.lnk` on Windows, `.command` on macOS, `.desktop` + app-menu entry on
@@ -92,9 +93,9 @@ Export Data; Holley software: export to CSV). The native `.hpl`/`.dl` files are
 raw binary with no channel names baked in — they can't be read safely, and
 guessing a column on a fuel calc is how you lean a motor out. CSV only.
 
-### The full UI (what you want)
+### The full UI (the default)
 
-    tuneassist --tui
+    tuneassist            # no arguments -> the full UI  (same as --tui)
 
 Mouse and keyboard. A **garage** of your cars, a setup form, and the analysis
 screen — drop in a log and get the journey bar, heatmaps, the interactive
@@ -121,6 +122,14 @@ density, *then* turn the MAF back on and tune its curve (the SD airmass is your
 reference once VE is right). Spark is **knock-governed**: it pulls timing where
 knock shows, and only adds timing toward MBT if you ask, one small step per pull.
 **No knock channel logged, no timing advice. Period.**
+
+### Prefer a plain text walkthrough?
+
+    tuneassist --wizard            # the classic guided session, no mouse needed
+    tuneassist your_log.csv        # a log path also drops you into it
+
+Same brain, asked as a few questions in the terminal. Handy over SSH or on a
+machine where the full UI won't draw right.
 
 ### Headless / scripting
 
