@@ -120,7 +120,15 @@ def main(argv=None):
                    help="check GitHub for a newer release and exit")
     p.add_argument("--update", action="store_true",
                    help="download and install the latest release (packaged binary)")
+    p.add_argument("--install-shortcut", action="store_true",
+                   help="create a double-clickable desktop launcher for the TUI")
     args = p.parse_args(argv)
+
+    if getattr(args, "install_shortcut", False):
+        from . import shortcut
+        ok, msg = shortcut.install_shortcut()
+        print(msg)
+        sys.exit(0 if ok else 1)
 
     if args.check_update or args.update:
         from . import update, __version__ as _v

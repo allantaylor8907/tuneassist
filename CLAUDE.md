@@ -103,11 +103,17 @@ tunable state.
   `~/.tuneassist/update.json`), disabled by `TUNEASSIST_NO_UPDATE_CHECK=1`/`CI`,
   and every network path fails silently. pip/pipx installs are pointed at the
   package manager. Tested (all offline).
+- `shortcut.py` — **desktop launcher creator** (`--install-shortcut`, stdlib
+  only). Drops an OS-native double-clickable shortcut that opens the TUI: Windows
+  `.lnk` via WScript.Shell COM, macOS `.command`, Linux `.desktop` (+ app-menu
+  entry). Resolves the launch target for frozen binary vs pip/console-script vs
+  `python -m`. Writers factored for testing; paths with spaces quoted. Tested.
 - `cli.py` — orchestrator. No args/log path → Rich wizard; `--tui` → Textual app;
   `--demo` → locked-down demo; `--batch` → plain report; `--json` → headless JSON.
-  `--version`, `--check-update`, `--update`; a throttled one-line update notice
-  precedes the wizard/batch flows. Version is single-sourced in
-  `tuneassist/__init__.py` (`__version__`); pyproject reads it dynamically.
+  `--version`, `--check-update`, `--update`, `--install-shortcut`; a throttled
+  one-line update notice precedes the wizard/batch flows. Version is
+  single-sourced in `tuneassist/__init__.py` (`__version__`); pyproject reads it
+  dynamically.
 
 ## Architecture / distribution
 - **UI is decoupled from the engine.** `core.py` is headless (data in → data out);

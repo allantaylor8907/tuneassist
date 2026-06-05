@@ -43,6 +43,13 @@ terminal:
 > macOS Gatekeeper may block an unsigned binary the first time — right-click →
 > Open, or `xattr -d com.apple.quarantine ./tuneassist-macos-arm64`.
 
+**Desktop shortcut.** For a double-clickable launcher that opens the full UI:
+
+    tuneassist --install-shortcut
+
+It drops a native launcher on your desktop (a `.lnk` on Windows, a `.command`
+on macOS, a `.desktop` entry + app-menu item on Linux) that runs `--tui`.
+
 **Staying up to date.** The app checks GitHub for new releases (at most once a
 day, and never if you set `TUNEASSIST_NO_UPDATE_CHECK=1`) and tells you when one
 is out. To install it:
