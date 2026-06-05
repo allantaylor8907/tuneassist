@@ -641,8 +641,8 @@ class TuneAssistApp(App):
     ModalScreen { align: center middle; }
     """
     BINDINGS = [("ctrl+c", "quit", "Quit"), ("ctrl+t", "cycle_theme", "Theme")]
-    THEMES = ["gruvbox", "nord", "tokyo-night", "catppuccin-mocha",
-              "textual-dark", "textual-light"]
+    THEMES = ["textual-dark", "gruvbox", "nord", "tokyo-night",
+              "catppuccin-mocha", "textual-light"]
 
     def __init__(self, garage_path: str | None = None, demo: bool = False,
                  samples_dir: str | None = None):
@@ -660,9 +660,9 @@ class TuneAssistApp(App):
         self.samples_dir = os.path.abspath(samples_dir) if samples_dir else None
 
     def on_mount(self):
-        # remembered theme (per-machine), default gruvbox
+        # remembered theme (per-machine), default textual-dark
         saved = self.data.get("theme")
-        self.theme = saved if saved in self.THEMES else "gruvbox"
+        self.theme = saved if saved in self.THEMES else "textual-dark"
         self.push_screen(GarageScreen())
 
     def action_cycle_theme(self):

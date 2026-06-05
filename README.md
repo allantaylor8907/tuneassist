@@ -7,6 +7,22 @@ in the vendor software. It never writes a tune file or touches the ECU.
 Supports **GM / HPTuners** (Gen 3/4 LS, speed-density) and **Holley EFI**
 (Terminator X, Sniper).
 
+## Screenshots
+
+The Textual UI — garage, setup, and the analysis screen (journey bar, diagnosis,
+correction heatmap, and the "next step" card):
+
+| Garage | Setup | Analysis report |
+|---|---|---|
+| ![Garage](docs/images/01-garage.svg) | ![Setup](docs/images/02-setup.svg) | ![Report](docs/images/04-report.svg) |
+
+| Correction grid (RPM × MAP) | Top cells (sortable) |
+|---|---|
+| ![Correction grid](docs/images/05-correction-grid.svg) | ![Top cells](docs/images/06-top-cells.svg) |
+
+> Regenerate these any time with `python tools/capture_screens.py`. See
+> [docs/images/README.md](docs/images/README.md) for recording an animated GIF.
+
 ## Install / run
 
 **Just want to run it?** Grab the single-file binary for your OS from the
@@ -37,8 +53,8 @@ A mouse-and-keyboard terminal app: a **garage** of your vehicles (pick, create,
 rename, delete), a setup form, and an analysis screen where you point it at a log
 and get the journey bar, color heatmaps, an interactive correction grid, the
 spark grid, a plain-language **diagnosis** panel, and the "next step" card.
-Press **Ctrl+T** to cycle themes (gruvbox, nord, tokyo-night, …) — remembered
-per machine. **Quick scan** skips the garage for a one-off look; **Browse…**
+Press **Ctrl+T** to cycle themes (default textual-dark; then gruvbox, nord,
+tokyo-night, …) — remembered per machine. **Quick scan** skips the garage for a one-off look; **Browse…**
 opens the native file picker.
 
 ### Web demo (zero install for viewers)

@@ -165,16 +165,16 @@ def test_theme_defaults_and_cycles_and_persists():
             app = TuneAssistApp(garage_path=gp)
             async with app.run_test() as pilot:
                 await pilot.pause()
-                assert app.theme == "gruvbox"          # default
+                assert app.theme == "textual-dark"     # default
                 app.action_cycle_theme()
                 await pilot.pause()
-                assert app.theme == "nord"             # cycled
-            assert garage.load(gp).get("theme") == "nord"   # persisted
+                assert app.theme == "gruvbox"          # cycled
+            assert garage.load(gp).get("theme") == "gruvbox"   # persisted
             # a second launch restores it
             app2 = TuneAssistApp(garage_path=gp)
             async with app2.run_test() as pilot:
                 await pilot.pause()
-                assert app2.theme == "nord"
+                assert app2.theme == "gruvbox"
     asyncio.run(go())
 
 
