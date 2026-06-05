@@ -69,6 +69,9 @@ jobs:
     needs: binaries
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    # The default GITHUB_TOKEN is read-only; publishing a Release needs write.
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
