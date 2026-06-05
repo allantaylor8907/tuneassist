@@ -95,8 +95,19 @@ tunable state.
 - `demo.py` — locked-down demo entry for `textual serve` (`run_demo`): confines
   file access to bundled `demo/samples/`, hides the native picker, throwaway
   garage. `demo/serve.py` hosts it in a browser. Tested.
+- `update.py` — **self-update / release check** (stdlib only, offline-safe). Hits
+  the GitHub Releases API, compares `__version__` to the latest tag, and for the
+  frozen PyInstaller binary downloads the OS-matched asset and swaps it in place
+  (Windows: rename-running-exe trick + `.old` cleanup next launch; POSIX: atomic
+  rename). `passive_check()` is throttled to once/day (state in
+  `~/.tuneassist/update.json`), disabled by `TUNEASSIST_NO_UPDATE_CHECK=1`/`CI`,
+  and every network path fails silently. pip/pipx installs are pointed at the
+  package manager. Tested (all offline).
 - `cli.py` — orchestrator. No args/log path → Rich wizard; `--tui` → Textual app;
   `--demo` → locked-down demo; `--batch` → plain report; `--json` → headless JSON.
+  `--version`, `--check-update`, `--update`; a throttled one-line update notice
+  precedes the wizard/batch flows. Version is single-sourced in
+  `tuneassist/__init__.py` (`__version__`); pyproject reads it dynamically.
 
 ## Architecture / distribution
 - **UI is decoupled from the engine.** `core.py` is headless (data in → data out);

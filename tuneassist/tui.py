@@ -640,7 +640,8 @@ class TuneAssistApp(App):
     #dialog-buttons Button { margin: 0 1; }
     ModalScreen { align: center middle; }
     """
-    BINDINGS = [("ctrl+c", "quit", "Quit"), ("ctrl+t", "cycle_theme", "Theme")]
+    BINDINGS = [("ctrl+c", "quit", "Quit"), ("ctrl+t", "cycle_theme", "Theme"),
+                ("ctrl+u", "update_app", "Update")]
     THEMES = ["textual-dark", "gruvbox", "nord", "tokyo-night",
               "catppuccin-mocha", "textual-light"]
 
@@ -658,12 +659,53 @@ class TuneAssistApp(App):
         # so a hosted instance never exposes the server filesystem.
         self.demo = demo
         self.samples_dir = os.path.abspath(samples_dir) if samples_dir else None
+        # Only the real entry point (run_tui) turns on the once-a-day update
+        # check, so the test harness never hits the network or writes state.
+        self.auto_update_check = False
 
     def on_mount(self):
         # remembered theme (per-machine), default textual-dark
         saved = self.data.get("theme")
         self.theme = saved if saved in self.THEMES else "textual-dark"
         self.push_screen(GarageScreen())
+        if self.auto_update_check and not self.demo:
+            self._passive_update_check()
+
+    def _passive_update_check(self):
+        """Daemon-threaded, fail-silent once-a-day check -> a gentle notify."""
+        import threading
+        from . import update
+
+        def work():
+            try:
+                update.cleanup_old_binary()
+                info = update.passive_check()
+                if info:
+                    self.call_from_thread(
+                        self.notify,
+                        f"Update available: v{info.current} -> v{info.latest}. "
+                        "Press Ctrl+U to install.",
+                        title="tuneassist", severity="information", timeout=10)
+            except Exception:
+                pass
+        threading.Thread(target=work, daemon=True).start()
+
+    def action_update_app(self):
+        """Ctrl+U: download + install the latest release in the background."""
+        import threading
+        from . import update
+
+        self.notify("Checking for updates...", title="tuneassist", timeout=4)
+
+        def work():
+            try:
+                ok, msg = update.self_update()
+            except Exception as e:               # pragma: no cover - defensive
+                ok, msg = False, str(e)
+            self.call_from_thread(
+                self.notify, msg, title="tuneassist",
+                severity="information" if ok else "warning", timeout=10)
+        threading.Thread(target=work, daemon=True).start()
 
     def action_cycle_theme(self):
         cur = self.theme if self.theme in self.THEMES else self.THEMES[0]
@@ -705,4 +747,6 @@ class TuneAssistApp(App):
 
 
 def run_tui(garage_path: str | None = None):
-    TuneAssistApp(garage_path).run()
+    app = TuneAssistApp(garage_path)
+    app.auto_update_check = True
+    app.run()

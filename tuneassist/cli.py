@@ -83,8 +83,25 @@ def run(path: str, platform: str = "auto", out_dir: str = "./out") -> None:
         print(report)
 
 
+def _print_update_notice():
+    """One-line, throttled, fail-silent nudge for the text CLI flows."""
+    try:
+        from . import update
+        update.cleanup_old_binary()
+        info = update.passive_check()
+        if info:
+            how = ("run 'tuneassist --update'" if update.is_frozen()
+                   else "pipx upgrade tuneassist")
+            print(f"[tuneassist] a newer version is available: "
+                  f"v{info.current} -> v{info.latest}  ({how})\n")
+    except Exception:
+        pass
+
+
 def main(argv=None):
+    from . import __version__
     p = argparse.ArgumentParser(description="AI-assisted tuning analyzer (GM/HPTuners + Holley).")
+    p.add_argument("--version", action="version", version=f"tuneassist {__version__}")
     p.add_argument("log", nargs="?", help="log CSV; omit to start the guided session")
     p.add_argument("--platform", choices=["auto", "gm", "holley"], default="auto")
     p.add_argument("--out-dir", default="./out")
@@ -99,7 +116,26 @@ def main(argv=None):
     p.add_argument("--airflow", choices=["ve_sd", "maf", "no_maf"], default="ve_sd",
                    help="airflow strategy for --json runs (default ve_sd)")
     p.add_argument("--spark", action="store_true", help="include spark analysis in --json")
+    p.add_argument("--check-update", action="store_true",
+                   help="check GitHub for a newer release and exit")
+    p.add_argument("--update", action="store_true",
+                   help="download and install the latest release (packaged binary)")
     args = p.parse_args(argv)
+
+    if args.check_update or args.update:
+        from . import update, __version__ as _v
+        if args.update:
+            ok, msg = update.self_update()
+            print(msg)
+            sys.exit(0 if ok else 1)
+        info = update.check_for_update()
+        if info is None:
+            print(f"tuneassist v{_v} is the latest (or the check couldn't reach GitHub).")
+        else:
+            print(f"Update available: v{info.current} -> v{info.latest}\n  {info.page_url}")
+            print("  Install it with: tuneassist --update"
+                  if update.is_frozen() else "  Upgrade with: pipx upgrade tuneassist")
+        return
 
     if args.tui:
         from .tui import run_tui
@@ -122,9 +158,11 @@ def main(argv=None):
         return
 
     if args.batch and args.log:
+        _print_update_notice()
         run(args.log, args.platform, args.out_dir)
         return
     # Default: the beautiful, guided, multi-pass session (wizard.py).
+    _print_update_notice()
     from .wizard import run_session
     run_session(initial_log=args.log, out_dir=args.out_dir)
 

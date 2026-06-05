@@ -31,14 +31,17 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            artifact: tuneassist-linux-x64
             binname: tuneassist
+            # OS-specific release asset name -- must stay distinct (no collisions)
+            # and must contain the OS keyword the self-updater matches on
+            # (update.py: 'linux' / 'macos' / 'windows').
+            asset: tuneassist-linux-x64
           - os: windows-latest
-            artifact: tuneassist-windows-x64
             binname: tuneassist.exe
+            asset: tuneassist-windows-x64.exe
           - os: macos-latest
-            artifact: tuneassist-macos-arm64
             binname: tuneassist
+            asset: tuneassist-macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -51,10 +54,16 @@ jobs:
       - name: Smoke-test the binary (headless JSON)
         shell: bash
         run: ./dist/${{ matrix.binname }} tests/fixtures/ride42.csv --json > out.json && python -c "import json;d=json.load(open('out.json'));assert d['stage']=='TUNE_VE_SD',d['stage'];print('binary OK')"
+      - name: Verify --version works
+        shell: bash
+        run: ./dist/${{ matrix.binname }} --version
+      - name: Rename to the OS-specific asset name
+        shell: bash
+        run: mv "dist/${{ matrix.binname }}" "dist/${{ matrix.asset }}"
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.binname }}
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
 
   release:
     needs: binaries

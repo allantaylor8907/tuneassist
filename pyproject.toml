@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tuneassist"
-version = "0.1.0"
+dynamic = ["version"]
 description = "AI-assisted, recommendation-only engine tuning analyzer (GM/HPTuners + Holley)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -33,3 +33,6 @@ tuneassist-demo = "tuneassist.demo:run_demo"
 
 [tool.setuptools]
 packages = ["tuneassist"]
+
+[tool.setuptools.dynamic]
+version = { attr = "tuneassist.__version__" }

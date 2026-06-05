@@ -32,7 +32,26 @@ the fuel/VE correction, and the "next step" card:
 
 **Just want to run it?** Grab the single-file binary for your OS from the
 [Releases](../../releases) page — no Python needed, double-click or run from a
-terminal.
+terminal:
+
+| OS | Download | Run |
+|---|---|---|
+| Windows | `tuneassist-windows-x64.exe` | double-click, or `tuneassist-windows-x64.exe --tui` |
+| macOS   | `tuneassist-macos-arm64`     | `chmod +x tuneassist-macos-arm64 && ./tuneassist-macos-arm64 --tui` |
+| Linux   | `tuneassist-linux-x64`       | `chmod +x tuneassist-linux-x64 && ./tuneassist-linux-x64 --tui` |
+
+> macOS Gatekeeper may block an unsigned binary the first time — right-click →
+> Open, or `xattr -d com.apple.quarantine ./tuneassist-macos-arm64`.
+
+**Staying up to date.** The app checks GitHub for new releases (at most once a
+day, and never if you set `TUNEASSIST_NO_UPDATE_CHECK=1`) and tells you when one
+is out. To install it:
+
+    tuneassist --update          # binary: downloads + swaps itself in place
+    tuneassist --check-update    # just check, don't install
+    # in the TUI: press Ctrl+U
+
+(If you installed via pip/pipx, `--update` points you at `pipx upgrade tuneassist`.)
 
 **From source:**
 
