@@ -1,6 +1,6 @@
 # tuneassist
 
-**Drop in a datalog. Get told exactly what to change, where to change it, and what to drive next.**
+**Drop in a datalog. Get told exactly what to change, where to change it, and what to do or how to drive next.**
 
 tuneassist reads the CSV your scanner exports, checks the car is actually in a
 state worth tuning, and hands back the fuel/VE changes a good tuner would make —
@@ -15,7 +15,7 @@ the playbook so you don't have to chase trims with a spreadsheet.
 Works with **GM / HP Tuners** (Gen 3/4 LS — P01/P59, E38/E40/E67, speed-density +
 MAF) and **Holley EFI** (Terminator X, Sniper V1/V2). Built for swaps, hot rods,
 and anyone tuning their own stuff. Runs **100% offline** — your logs never leave
-your machine.
+your machine. No internet access required so you can tune on the street.
 
 [![Release](https://img.shields.io/github/v/release/allantaylor8907/tuneassist?sort=semver)](https://github.com/allantaylor8907/tuneassist/releases)
 [![Build](https://img.shields.io/github/actions/workflow/status/allantaylor8907/tuneassist/build.yml?branch=main)](https://github.com/allantaylor8907/tuneassist/actions)
@@ -26,7 +26,7 @@ your machine.
 ---
 
 ## What it looks like
-
+Add your vehicle to the garage for stored state or do a quick scan. 
 Pick your build out of the garage, fill in the hardware once, and it remembers
 everything between sessions:
 
@@ -34,8 +34,8 @@ everything between sessions:
   <img src="docs/images/01-garage.svg" width="49%" alt="Garage — your vehicles, remembered between sessions">
   <img src="docs/images/02-setup.svg" width="49%" alt="Setup — engine preset, bolt-ons, cam tier">
 </p>
-
-Point it at a log and it lays out the whole picture — where you are in the tune,
+In HPTuners or Holley - open your log file, export it (as CSV but this usually happens by default)
+Open Tuneassist and point it at a CSV log and it lays out the whole picture — where you are in the tune,
 what's wrong in plain English, the fuel/VE correction, and the single next move:
 
 <p align="center"><img src="docs/images/04-report.svg" width="100%" alt="Analysis report — journey, diagnosis, correction, next step"></p>
