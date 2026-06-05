@@ -58,9 +58,19 @@ OS from the [Releases page](https://github.com/allantaylor8907/tuneassist/releas
 | macOS | `tuneassist-macos-arm64` | `chmod +x tuneassist-macos-arm64 && ./tuneassist-macos-arm64` |
 | Linux | `tuneassist-linux-x64` | `chmod +x tuneassist-linux-x64 && ./tuneassist-linux-x64` |
 
-Running it with no arguments opens the full UI. On macOS the first launch may get
-blocked because it's unsigned — right-click → Open, or run
-`xattr -d com.apple.quarantine ./tuneassist-macos-arm64`.
+Running it with no arguments opens the full UI.
+
+**First-run warnings (it's not signed — yet).** The binaries aren't code-signed,
+so your OS will throw a scary-but-harmless warning the first time:
+
+- **Windows:** "Windows protected your PC" → click **More info → Run anyway**.
+- **macOS:** right-click → **Open**, or `xattr -d com.apple.quarantine ./tuneassist-macos-arm64`.
+
+That's normal for an indie open-source binary. If you'd rather not trust a random
+download, build it yourself from source (below) — or verify the file against the
+published checksums: download `SHA256SUMS.txt` from the release and run
+`sha256sum -c SHA256SUMS.txt` (Linux/macOS) or
+`Get-FileHash tuneassist-windows-x64.exe` (Windows) and compare.
 
 **Want a desktop icon?** One command drops a double-clickable launcher on your
 desktop (`.lnk` on Windows, `.command` on macOS, `.desktop` + app-menu entry on
