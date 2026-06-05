@@ -83,21 +83,36 @@ def build_banner():
 def build_journey_bar(current_stage: str):
     cur = STAGE_ORDER.get(current_stage, 0)
     line = Text(" ")
-    for key, title in STAGES:
+    for n, (key, title) in enumerate(STAGES, 1):
         i = STAGE_ORDER[key]
+        seg = f" {n}.{title} "
         if i < cur:
-            line.append(f" {title} ", style="green")
+            line.append(seg, style="green")
             mark = ("green", ">")
         elif i == cur:
-            line.append(f" {title} ", style="bold white on blue")
+            line.append(seg, style="bold white on blue")
             mark = ("blue", ">")
         else:
-            line.append(f" {title} ", style="grey42")
+            line.append(seg, style="grey42")
             mark = ("grey42", ">")
         if key != STAGES[-1][0]:
             line.append(mark[1], style=mark[0])
-    return Panel(line, box=box.ROUNDED, border_style="grey42",
-                 title="[grey70]tuning journey[/]", title_align="left")
+
+    # Spell out "you are here -> what's next" so the ORDER is unmistakable on the
+    # very first upload. The canonical airflow order is VE (MAF off) THEN the MAF
+    # curve -- the #1 thing people ask. State it plainly.
+    cap = Text("  ", style="grey50")
+    cur_title = STAGES[cur][1]
+    cap.append(f"you are here: {cur + 1}. {cur_title}", style="bold grey70")
+    if cur < len(STAGES) - 1:
+        cap.append("   ->   next: ", style="grey50")
+        cap.append(f"{cur + 2}. {STAGES[cur + 1][1]}", style="bold cyan")
+    body = Group(line, Text(""), cap)
+    return Panel(body, box=box.ROUNDED, border_style="grey42",
+                 title="[grey70]tuning journey[/]  [grey42](do these in order)[/]",
+                 subtitle="[grey42]fuel order: VE with MAF OFF first, THEN the MAF "
+                          "curve -- once VE is right, SD airmass is the MAF's reference[/]",
+                 title_align="left", subtitle_align="left")
 
 
 def build_triage(tr, platform: str):

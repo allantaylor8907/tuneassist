@@ -34,10 +34,11 @@ from .profile import EngineProfile, ENGINE_PRESETS, COMMON_MODS, preset_to_profi
 
 FUELS = [("Pump gas 91-93", 14.7), ("E10 / 87-89", 14.08), ("E85", 9.76),
          ("Race / other", 14.7)]
-AIRFLOWS = [("MAF disabled - tuning VE (SD)", "ve_sd"),
-            ("MAF enabled / blended", "maf"),
-            ("No MAF (pure speed-density)", "no_maf"),
-            ("Tuning the MAF curve now", "maf")]
+# Ordered to read as the workflow: do VE first (MAF off), then the MAF curve.
+AIRFLOWS = [("Step 1: MAF OFF - tuning VE (speed-density)  [start here]", "ve_sd"),
+            ("Step 2: MAF back on - tuning the MAF curve", "maf"),
+            ("MAF enabled / blended (already past VE)", "maf"),
+            ("No MAF installed (pure speed-density)", "no_maf")]
 
 
 def _native_pick_file() -> str | None:

@@ -45,11 +45,12 @@ FUELS = {
 }
 
 # Airflow strategy (GM only). Maps to stages.determine_stage airflow_mode.
+# Ordered as the workflow: VE first (MAF off), THEN the MAF curve.
 AIRFLOW = {
-    "1": ("MAF disabled now -- tuning VE (speed-density)", "ve_sd"),
-    "2": ("MAF enabled / normal blended", "maf"),
-    "3": ("No MAF at all (pure speed-density build)", "no_maf"),
-    "4": ("Tuning the MAF curve now (VE already done)", "maf"),
+    "1": ("Step 1 -- MAF OFF, tuning VE (speed-density)  [start here]", "ve_sd"),
+    "2": ("Step 2 -- MAF back on, tuning the MAF curve (VE already done)", "maf"),
+    "3": ("MAF enabled / normal blended (already past VE)", "maf"),
+    "4": ("No MAF installed (pure speed-density build)", "no_maf"),
 }
 
 

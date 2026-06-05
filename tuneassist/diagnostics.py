@@ -467,29 +467,65 @@ def _d_temps(df, col, cfg, dc, warm):
 
 def _d_trim_clipping(df, col, cfg, dc, warm):
     """Any fuel-trim bank pegged near the ECU's correction authority (~+/-25%)
-    means it's out of room to compensate -- the base is way off or there's a leak
-    / fuel-supply problem."""
-    for k in ("stft", "ltft", "stft2", "ltft2"):
-        s = _num(df, col, k)
-        if s is None:
-            continue
-        sv = s[warm].dropna()
-        if len(sv) < 30:
-            continue
-        peak = float(sv.abs().quantile(0.95))
-        if peak >= dc.trim_clip:
-            direction = "adding" if sv.median() > 0 else "pulling"
-            return Finding("TRIM_CLIPPING", "warning", "Fuel trims are maxed out",
-                           f"Fuel trim is hitting ~{peak:.0f}% ({direction} fuel) -- near "
-                           "the ECU's correction limit, so it's out of room to compensate.",
-                           ["base fuel/VE airflow is way off",
-                            "big vacuum leak or a fuel-supply problem",
-                            "wrong injector flow scaling"],
-                           ["Fix the underlying airflow/fuel error (apply the correction, "
-                            "check for leaks and fuel pressure) -- at the limit the ECU can "
-                            "no longer hide it, so the engine will go lean/rich for real."],
-                           "high")
-    return None
+    means it's out of room to compensate. WHICH banks peg tells you where to
+    look: BOTH banks pegged the same way is a global cause (fuel supply, base
+    airflow/MAF, injector scaling); ONE bank pegged is bank-specific (a lazy/dead
+    O2 on that bank, an exhaust leak upstream of that O2 reading false-lean, a
+    vacuum leak feeding one bank, or that bank's injectors). (HPTuners forum:
+    'what would cause LTFT bank 2 to be 100'.)"""
+    def bank_peak(*keys):
+        peak, med = 0.0, 0.0
+        for k in keys:
+            s = _num(df, col, k)
+            if s is None:
+                continue
+            sv = s[warm].dropna()
+            if len(sv) < 30:
+                continue
+            p = float(sv.abs().quantile(0.95))
+            if p > peak:
+                peak, med = p, float(sv.median())
+        return peak, med
+
+    b1_peak, b1_med = bank_peak("stft", "ltft")
+    b2_peak, b2_med = bank_peak("stft2", "ltft2")
+    b1 = b1_peak >= dc.trim_clip
+    b2 = b2_peak >= dc.trim_clip
+    if not (b1 or b2):
+        return None
+
+    peak = max(b1_peak, b2_peak)
+    direction = "adding" if (b1_med if b1 else b2_med) > 0 else "pulling"
+
+    if b1 and b2:
+        return Finding("TRIM_CLIPPING", "warning", "Both banks' fuel trims are maxed out",
+                       f"BOTH banks are pegged at ~{peak:.0f}% ({direction} fuel) -- the ECU "
+                       "is out of room on both sides, so this is a GLOBAL cause, not one "
+                       "cylinder bank.",
+                       ["base fuel/VE airflow is way off (or the MAF is mis-scaled)",
+                        "fuel supply: low/failing pump, restricted filter, regulator, "
+                        "or undersized injectors at this demand",
+                        "wrong injector flow-rate scaling in the tune"],
+                       ["Treat it as a whole-engine fueling error: apply the airflow/VE "
+                        "correction, then verify fuel pressure holds under load before "
+                        "trusting any trims -- at the limit the engine goes lean/rich for real."],
+                       "high")
+
+    bank = "1" if b1 else "2"
+    return Finding("TRIM_CLIPPING", "warning", f"Bank {bank} fuel trim is maxed out",
+                   f"Only bank {bank} is pegged at ~{peak:.0f}% ({direction} fuel) while the "
+                   "other bank is within range. A one-bank peg points at that bank "
+                   "specifically, not the whole fuel system.",
+                   [f"a lazy or dead O2 sensor on bank {bank} (it may be reading false-lean)",
+                    f"an exhaust leak UPSTREAM of the bank-{bank} O2 (air pulls the reading "
+                    "lean so the ECU keeps adding fuel)",
+                    f"a vacuum leak feeding bank {bank}, or a clogged/weak injector on that bank"],
+                   [f"Compare the bank-{bank} O2 to the other bank's; swap/inspect that O2 "
+                    "sensor and check for an exhaust leak at the manifold/collector on that "
+                    f"side. If a header was just installed, suspect the bank-{bank} gasket.",
+                    "Don't paste a global airflow correction to chase a one-bank peg -- "
+                    "it will mis-shape the cells the good bank shares."],
+                   "high")
 
 
 def _d_low_voltage(df, col, cfg, dc, warm):

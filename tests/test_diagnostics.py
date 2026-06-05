@@ -175,6 +175,32 @@ def test_trim_clipping():
     assert "TRIM_CLIPPING" in _ids(_diag(df))
 
 
+def test_trim_clipping_one_bank_is_bank_specific():
+    # only bank 2 pegged -> point at that bank's O2 / exhaust leak / injectors,
+    # NOT a global fuel-supply cause (HPTuners 'LTFT bank 2 = 100')
+    df = _base()
+    df["Short Term Fuel Trim Bank 1"] = 3.0
+    df["Long Term Fuel Trim Bank 1"] = 0.0
+    df["Short Term Fuel Trim Bank 2"] = 24.0
+    df["Long Term Fuel Trim Bank 2"] = 0.0
+    f = [x for x in _diag(df) if x.id == "TRIM_CLIPPING"][0]
+    assert "Bank 2" in f.title
+    blob = " ".join(f.causes + f.corrections).lower()
+    assert "o2" in blob and "exhaust leak" in blob
+
+
+def test_trim_clipping_both_banks_is_global():
+    df = _base()
+    df["Short Term Fuel Trim Bank 1"] = 24.0
+    df["Long Term Fuel Trim Bank 1"] = 0.0
+    df["Short Term Fuel Trim Bank 2"] = 23.0
+    df["Long Term Fuel Trim Bank 2"] = 0.0
+    f = [x for x in _diag(df) if x.id == "TRIM_CLIPPING"][0]
+    assert "Both banks" in f.title
+    assert any("fuel supply" in c.lower() or "fuel pressure" in c.lower()
+               for c in f.causes + f.corrections)
+
+
 def test_low_voltage():
     df = _base()
     df["Battery Voltage"] = 12.1
