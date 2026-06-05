@@ -9,6 +9,7 @@ export. Findings are advisory and ranked; safety-critical ones sort to the top.
 """
 
 from __future__ import annotations
+import re
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -39,6 +40,8 @@ class DiagnosticConfig:
     knock_deg: float = 1.0        # sustained retard above this = real knock
     iat_hot: float = 140.0        # F
     ect_hot: float = 235.0        # F
+    timing_deficit_deg: float = 2.5  # actual spark running this far BELOW commanded = flag
+    timing_excess_deg: float = 2.5   # actual ABOVE commanded by this = flag (logging/blend)
     # --- forced induction (turbo / supercharger) ---
     boost_map: float = 105.0      # kPa above (baro) this = under boost
     boost_lean_afr: float = 11.9  # under boost, leaner than this = danger
@@ -443,6 +446,91 @@ def _d_knock(df, col, cfg, dc, warm):
                     "If timing reads below your base table WITHOUT real knock, something "
                     "else is pulling it (hot IAT/ECT, or burst-knock anticipation -- "
                     "zero the Burst Knock multiplier)."], "high")
+
+
+def _timing_cols(df, col):
+    """(actual_col, commanded_col). GM logs ACTUAL 'Spark Advance' (already net of
+    knock retard); some scanner configs ALSO log a 'Commanded'/'Desired' timing
+    PID. A true commanded-vs-actual delta needs BOTH in the log -- we deliberately
+    never read the tune file, so without the commanded channel the base-table
+    value is unknown and we stay silent rather than guess."""
+    timing = [c for c in df.columns
+              if re.search(r"spark|ignition|timing", str(c).lower())
+              and re.search(r"adv|timing", str(c).lower())
+              and not re.search(r"retard|knock|correction|delta", str(c).lower())]
+    cmd = next((c for c in timing
+                if re.search(r"command|desired|target", str(c).lower())), None)
+    actual = next((c for c in timing
+                   if c != cmd and not re.search(r"command|desired|target", str(c).lower())),
+                  None)
+    if actual is None:
+        actual = col.get("spark")
+    return actual, cmd
+
+
+def _d_timing_vs_command(df, col, cfg, dc, warm):
+    """Commanded-vs-actual spark delta -- ONLY when the log carries both a
+    commanded/desired timing channel and the actual spark advance. Explains WHY
+    the engine is running less timing than the table asks for, attributing the
+    deficit to the things that ARE observable in the log (knock retard, hot
+    IAT/ECT) vs. the things that are not (octane-blend learning) -- the latter
+    needs the desired-timing trace or the tune to pin down. (HPTuners forum:
+    'why is my timing higher or lower than my commanded timing'.)"""
+    actual_c, cmd_c = _timing_cols(df, col)
+    if actual_c is None or cmd_c is None or actual_c == cmd_c:
+        return None
+    run = warm & (_num(df, col, "rpm").gt(500) if "rpm" in col else True)
+    a = pd.to_numeric(df[actual_c], errors="coerce")[run].dropna()
+    c = pd.to_numeric(df[cmd_c], errors="coerce")[run].dropna()
+    if len(a) < 40 or len(c) < 40:
+        return None
+    deficit = float(c.median() - a.median())   # +ve = actual running retarded vs command
+
+    if deficit >= dc.timing_deficit_deg:
+        causes, fixes = [], []
+        kn = _num(df, col, "knock")
+        kr = float(kn[run].dropna().median()) if kn is not None else 0.0
+        kr_max = float(kn[run].dropna().max()) if kn is not None else 0.0
+        if kr_max > dc.knock_deg:
+            causes.append(f"knock retard is pulling timing (up to {kr_max:.1f} deg) -- the "
+                          "knock system is doing its job; this is real")
+            fixes.append("Fix the knock first (fuel/octane/charge-temp); the timing returns "
+                         "as the knock system stops pulling.")
+        iat = _num(df, col, "iat")
+        if iat is not None and float(iat[run].quantile(0.95) or 0) > dc.iat_hot:
+            causes.append("high IAT -- the charge-temp (IAT) spark-correction table is "
+                          "retarding timing by design, not a fault")
+            fixes.append("Cool the intake charge (cold-air feed, heat-soak) to get that "
+                         "timing back rather than forcing it in the table.")
+        if kr_max <= dc.knock_deg and not causes:
+            causes.append("no live knock and IAT is fine -- the deficit is from a modifier "
+                          "we can't see in the log: most likely the high/low-octane blend "
+                          "learned down from a past knock event, or ECT/airmass spark trims")
+            fixes.append("Clear the knock-learn / octane history and re-log; if it still "
+                         "sits low with no knock, the desired-timing trace (or the tune) is "
+                         "needed to separate the blend from the base table.")
+        fixes.append("Reminder: this is the ACTUAL-vs-COMMANDED delta from the log; the "
+                     "tool never reads your tune, so it explains the gap, it doesn't edit "
+                     "the base spark table for you.")
+        sev = "warning" if deficit >= dc.timing_deficit_deg * 2 else "info"
+        return Finding("TIMING_BELOW_COMMAND", sev,
+                       "Actual timing is running below commanded",
+                       f"Actual spark is ~{deficit:.1f} deg below commanded "
+                       f"(commanded ~{c.median():.1f}, actual ~{a.median():.1f}). "
+                       "Something is pulling timing out after the table.",
+                       causes, fixes, "high")
+
+    if -deficit >= dc.timing_excess_deg:
+        return Finding("TIMING_ABOVE_COMMAND", "info",
+                       "Actual timing exceeds commanded",
+                       f"Actual spark is ~{-deficit:.1f} deg ABOVE commanded "
+                       f"(commanded ~{c.median():.1f}, actual ~{a.median():.1f}).",
+                       ["the high-octane side of the spark blend is fully in (expected if "
+                        "there's been no knock)",
+                        "or a channel/units mismatch between the two timing PIDs"],
+                       ["Usually benign -- confirm the two channels are the same units and "
+                        "that knock retard really is near zero."], "low")
+    return None
 
 
 def _d_temps(df, col, cfg, dc, warm):
@@ -1062,7 +1150,8 @@ def _idle_findings(df, col, cfg, dc, warm, cam_class=None):
 
 _DETECTORS = [_d_cruise_trim, _d_bank_imbalance, _d_wb_vs_commanded,
               _d_wot_fueling, _d_injector_duty, _d_trim_clipping, _d_low_voltage,
-              _d_low_fuel_pressure, _d_knock, _d_temps, _d_trim_oscillation]
+              _d_low_fuel_pressure, _d_knock, _d_timing_vs_command, _d_temps,
+              _d_trim_oscillation]
 
 
 # Detectors that only make sense on the GM/HPTuners model (the wideband is

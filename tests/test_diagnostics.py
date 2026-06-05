@@ -201,6 +201,35 @@ def test_trim_clipping_both_banks_is_global():
                for c in f.causes + f.corrections)
 
 
+def test_timing_below_command_needs_both_channels():
+    # only ACTUAL spark logged (no commanded/desired) -> we never read the tune,
+    # so we cannot compute a commanded-vs-actual delta and must stay silent
+    df = _base()
+    df["Spark Advance"] = 22.0
+    assert "TIMING_BELOW_COMMAND" not in _ids(_diag(df))
+
+
+def test_timing_below_command_attributes_to_knock():
+    df = _base()
+    df["Commanded Spark Advance"] = 24.0
+    df["Spark Advance"] = 17.0           # ~7 deg below command
+    df["Knock Retard"] = 6.0             # ...explained by knock
+    f = [x for x in _diag(df) if x.id == "TIMING_BELOW_COMMAND"][0]
+    assert "below commanded" in f.title.lower()
+    assert any("knock" in c.lower() for c in f.causes)
+
+
+def test_timing_below_command_without_knock_points_at_blend():
+    df = _base()
+    df["Commanded Spark Advance"] = 24.0
+    df["Spark Advance"] = 18.0           # below command but NO knock, cool IAT
+    df["Knock Retard"] = 0.0
+    df["Intake Air Temp"] = 80.0
+    f = [x for x in _diag(df) if x.id == "TIMING_BELOW_COMMAND"][0]
+    blob = " ".join(f.causes + f.corrections).lower()
+    assert "octane" in blob or "blend" in blob
+
+
 def test_low_voltage():
     df = _base()
     df["Battery Voltage"] = 12.1

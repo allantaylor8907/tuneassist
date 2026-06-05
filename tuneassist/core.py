@@ -228,7 +228,8 @@ def _name_tables(findings, platform: str):
     (APPLY_FUEL and STARTUP_FLARE already name their tables inline.)"""
     from .tables import table
     keys = {
-        "KNOCK": "spark", "INJ_DUTY": "injector", "HIGH_IAT": "iat_spark",
+        "KNOCK": "spark", "TIMING_BELOW_COMMAND": "spark", "INJ_DUTY": "injector",
+        "HIGH_IAT": "iat_spark",
         "IDLE_HIGH": "idle_air", "IDLE_LOW": "idle_air", "VACUUM_LEAK": "idle_air",
         "IDLE_TIMING_SWING": "idle_spark", "WARMUP_RICH": "warmup_enr",
         "WARMUP_LEAN": "warmup_enr", "ENRICH_NOT_DECAYED": "ase",
