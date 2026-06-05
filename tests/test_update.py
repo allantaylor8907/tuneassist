@@ -50,24 +50,34 @@ def test_passive_check_disabled_by_env():
 
 
 def test_passive_check_throttles_and_caches(monkeypatch=None):
-    with tempfile.TemporaryDirectory() as d:
-        statefile = os.path.join(d, "update.json")
-        update._state_path = lambda: statefile
-        calls = {"n": 0}
+    # this test exercises the THROTTLE logic, so neutralize the env guards (the
+    # CI/disable guards are covered by test_passive_check_disabled_by_env). CI
+    # runners set CI=1, which would otherwise short-circuit the unforced call.
+    saved = {k: os.environ.pop(k, None)
+             for k in ("CI", "TUNEASSIST_NO_UPDATE_CHECK")}
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            statefile = os.path.join(d, "update.json")
+            update._state_path = lambda: statefile
+            calls = {"n": 0}
 
-        def fake_latest():
-            calls["n"] += 1
-            return update.UpdateInfo(tuneassist.__version__, "99.0.0",
-                                     "page", None, None)
-        update.check_for_update = fake_latest
+            def fake_latest():
+                calls["n"] += 1
+                return update.UpdateInfo(tuneassist.__version__, "99.0.0",
+                                         "page", None, None)
+            update.check_for_update = fake_latest
 
-        first = update.passive_check(force=True)          # due -> hits "network"
-        assert first and first.latest == "99.0.0" and calls["n"] == 1
-        # not forced + just checked -> must NOT hit network again, but still
-        # surfaces the cached pending update
-        second = update.passive_check(force=False)
-        assert calls["n"] == 1
-        assert second and update.is_newer(second.latest, tuneassist.__version__)
+            first = update.passive_check(force=True)          # due -> hits "network"
+            assert first and first.latest == "99.0.0" and calls["n"] == 1
+            # not forced + just checked -> must NOT hit network again, but still
+            # surfaces the cached pending update
+            second = update.passive_check(force=False)
+            assert calls["n"] == 1
+            assert second and update.is_newer(second.latest, tuneassist.__version__)
+    finally:
+        for k, v in saved.items():
+            if v is not None:
+                os.environ[k] = v
 
 
 if __name__ == "__main__":
