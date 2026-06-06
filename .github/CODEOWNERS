@@ -1,0 +1,4 @@
+# Every change requires review from the repo owner. Combined with branch
+# protection (require review from Code Owners), this means external PRs need
+# @allantaylor8907's approval before they can be merged.
+* @allantaylor8907
