@@ -293,7 +293,27 @@ def _run_one(io: WizardIO, path: str, platform: str, opts: SessionOpts,
         render.spark_grid(cr.spark)
 
     render.prescription_panel(cr.prescription)
+    _maybe_offer_submission(io, path, cr, opts)
     return cr.stage
+
+
+def _maybe_offer_submission(io: WizardIO, path: str, cr, opts) -> None:
+    """Opt-in, dormant unless submit.SUBMIT_URL is set. Defaults to NO."""
+    from . import submit
+    if not submit.is_enabled():
+        return
+    if not io.confirm("\n[grey70]Help improve tuneassist by sharing this log? (only this "
+                      "log + a short analysis summary -- no vehicle name)[/]", default=False):
+        return
+    contact = str(io.ask("  Your email/handle (optional, for a reply)", default="") or "").strip()
+    note = str(io.ask("  Anything to note about this log? (optional)", default="") or "").strip()
+    try:
+        bundle, url = submit.submit(path, cr, opts, note=note, contact=contact)
+        console.print(f"  [green]Saved[/] {bundle}")
+        console.print(f"  [grey70]Opened the upload form in your browser -- attach that file "
+                      f"there. Thank you![/]")
+    except Exception as e:                          # pragma: no cover - defensive
+        console.print(f"  [yellow]Couldn't prepare the submission: {e}[/]")
 
 
 def _new_vehicle(io: WizardIO):

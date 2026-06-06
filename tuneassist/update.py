@@ -244,3 +244,16 @@ def self_update(info: UpdateInfo | None = None) -> tuple[bool, str]:
         return (False, f"Could not replace the binary ({e}). Get it manually: {info.page_url}")
 
     return (True, f"Updated to v{info.latest}. Restart tuneassist to run the new version.")
+
+
+def relaunch() -> None:
+    """Start the freshly-installed binary and exit this one. Only meaningful for
+    the frozen build (after self_update has swapped the file in place)."""
+    if not is_frozen():
+        return
+    try:
+        import subprocess
+        subprocess.Popen([sys.executable, *sys.argv[1:]])
+    except Exception:
+        pass
+    os._exit(0)

@@ -103,6 +103,16 @@ tunable state.
   `~/.tuneassist/update.json`), disabled by `TUNEASSIST_NO_UPDATE_CHECK=1`/`CI`,
   and every network path fails silently. pip/pipx installs are pointed at the
   package manager. Tested (all offline).
+- `submit.py` — **opt-in log submission** (off until `SUBMIT_URL` is set, stdlib
+  only). After an analysis the TUI ("Share log" button + `s`) and wizard offer to
+  bundle ONLY the analyzed log + a non-identifying `submission.json` (version,
+  platform, stage, profile, summary, finding ids, user-typed note/contact — never
+  the garage/nickname) into `~/.tuneassist/submissions/*.zip`, then open a free
+  upload form (`docs/SUBMISSIONS.md`; Tally recommended). Never auto-sends; the
+  user attaches the file themselves. Tested.
+- `update.py` self-update also exposes `relaunch()` (start the swapped binary,
+  exit this one). The TUI shows a one-click "Update & restart" banner on the
+  garage screen when a newer release is found, and Ctrl+U installs + relaunches.
 - `shortcut.py` — **desktop launcher creator** (`--install-shortcut`, stdlib
   only). Drops an OS-native double-clickable shortcut that opens the TUI: Windows
   `.lnk` via WScript.Shell COM, macOS `.command`, Linux `.desktop` (+ app-menu

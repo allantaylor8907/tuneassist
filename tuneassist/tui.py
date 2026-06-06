@@ -151,6 +151,9 @@ class GarageScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield Static(panels.build_banner(), id="banner")
+        with Horizontal(id="update-row", classes="hidden"):
+            yield Static("", id="update-msg")
+            yield Button("Update & restart", variant="success", id="do-update")
         yield Label("Your garage — pick a vehicle, press [b]s[/b] for a quick scan, "
                     "or [b]n[/b] for a new one:", id="garage-help")
         yield DataTable(id="vehicles", cursor_type="row", zebra_stripes=True)
@@ -166,6 +169,19 @@ class GarageScreen(Screen):
         dt = self.query_one("#vehicles", DataTable)
         dt.add_columns("Nickname", "Name", "Platform", "Last stage")
         self._reload()
+        info = getattr(self.app, "_update_info", None)
+        if info:
+            self.show_update(info)
+
+    def show_update(self, info):
+        """Reveal the 'update available' banner with a one-click install button."""
+        try:
+            self.query_one("#update-msg", Static).update(
+                f"[b]A newer version is available:[/b] v{info.current} -> "
+                f"v{info.latest}.  Click to install it and restart.")
+            self.query_one("#update-row").remove_class("hidden")
+        except Exception:
+            pass
 
     def _reload(self):
         dt = self.query_one("#vehicles", DataTable)
@@ -186,6 +202,9 @@ class GarageScreen(Screen):
         return self._names[dt.cursor_row]
 
     def on_button_pressed(self, e: Button.Pressed):
+        if e.button.id == "do-update":
+            self.app.action_update_app()
+            return
         {"open": self._open, "quick": self.action_quick, "new": self.action_new,
          "rename": self.action_rename, "delete": self.action_delete}[e.button.id]()
 
@@ -383,7 +402,8 @@ class SetupScreen(Screen):
 # --------------------------------------------------------------------------
 class AnalyzeScreen(Screen):
     BINDINGS = [("g", "garage", "Garage"), ("a", "focus_path", "Analyze a log"),
-                ("ctrl+o", "pick_file", "Open file…"), ("q", "app.quit", "Quit")]
+                ("ctrl+o", "pick_file", "Open file…"), ("s", "share_log", "Share log"),
+                ("q", "app.quit", "Quit")]
 
     def compose(self) -> ComposeResult:
         demo = getattr(self.app, "demo", False)
@@ -400,6 +420,9 @@ class AnalyzeScreen(Screen):
             if not demo:
                 yield Button("Browse…", id="pick")
             yield Button("Analyze", variant="primary", id="analyze")
+            from . import submit
+            if submit.is_enabled() and not demo:
+                yield Button("Share log", id="share")
         with Collapsible(title="Sample logs" if demo else "…or browse in-app",
                          id="browser", collapsed=not demo):
             if not demo:
@@ -419,6 +442,7 @@ class AnalyzeScreen(Screen):
 
     def on_mount(self):
         self._cr = None
+        self._last_path = None
         self._sort_rev = {}
         self._refresh_info()
 
@@ -464,6 +488,8 @@ class AnalyzeScreen(Screen):
             self._analyze()
         elif e.button.id == "pick":
             self.action_pick_file()
+        elif e.button.id == "share":
+            self.action_share_log()
 
     def action_pick_file(self):
         """Open the OS-native file picker (so you can browse anywhere)."""
@@ -503,12 +529,44 @@ class AnalyzeScreen(Screen):
                                      cr.summary.median_pct, cr.summary.max_abs_pct))
         self.app.persist(cr.stage)
         self._cr = cr
+        self._last_path = path
         self.query_one("#journey", Static).update(panels.build_journey_bar(cr.stage))
         self.query_one("#results", Static).update(
             panels.build_report(cr, self.app.history, show_spark=self.app.opts.tune_spark))
         self._populate_grid(cr)
         self._populate_cells(cr)
         self.notify(f"Stage: {cr.stage.replace('_', ' ').title()}", severity="information")
+        from . import submit
+        if submit.is_enabled() and not getattr(self.app, "demo", False):
+            self.notify("Want to help improve tuneassist? Press 'S' to share this log.",
+                        title="tuneassist", severity="information", timeout=8)
+
+    def action_share_log(self):
+        """Opt-in: bundle the just-analyzed log + analysis summary and open the
+        submission form. Never sends anything on its own."""
+        from . import submit
+        if not submit.is_enabled() or getattr(self.app, "demo", False):
+            return
+        if not self._cr or not self._last_path:
+            self.notify("Analyze a log first, then share it.", severity="warning")
+            return
+
+        def go(yes):
+            if not yes:
+                return
+            try:
+                bundle, url = submit.submit(self._last_path, self._cr, self.app.opts)
+                self.notify(f"Saved {os.path.basename(bundle)} and opened the upload "
+                            "form in your browser — attach that file there. Thank you!",
+                            title="tuneassist", severity="information", timeout=12)
+            except Exception as ex:                 # pragma: no cover - defensive
+                self.notify(f"Couldn't prepare the submission: {ex}", severity="error")
+        self.app.push_screen(ConfirmDialog(
+            "Share this log to help improve tuneassist?\n\n"
+            "It bundles ONLY this log file plus a short analysis summary (no garage, "
+            "no vehicle name). Your browser opens an upload page; you attach the file "
+            "and can add your contact there if you want a reply. Nothing is sent "
+            "automatically."), go)
 
     # ---- interactive correction grid (RPM x MAP, colored, clickable) ----
     def _populate_grid(self, cr):
@@ -609,6 +667,12 @@ class TuneAssistApp(App):
     CSS = """
     Screen { background: $surface; }
     #banner { margin: 1 2 0 2; }
+    #update-row {
+        height: auto; margin: 1 2; padding: 0 1;
+        background: $success-darken-2; border: tall $success;
+    }
+    #update-row Static { width: 1fr; padding: 1 1 0 0; }
+    .hidden { display: none; }
     #garage-help { margin: 1 2; }
     #vehicles { margin: 0 2; height: 1fr; }
     #garage-buttons, #setup-buttons, #dialog-buttons { height: auto; margin: 1 2; }
@@ -662,6 +726,7 @@ class TuneAssistApp(App):
         # Only the real entry point (run_tui) turns on the once-a-day update
         # check, so the test harness never hits the network or writes state.
         self.auto_update_check = False
+        self._update_info = None
 
     def on_mount(self):
         # remembered theme (per-machine), default textual-dark
@@ -681,31 +746,46 @@ class TuneAssistApp(App):
                 update.cleanup_old_binary()
                 info = update.passive_check()
                 if info:
-                    self.call_from_thread(
-                        self.notify,
-                        f"Update available: v{info.current} -> v{info.latest}. "
-                        "Press Ctrl+U to install.",
-                        title="tuneassist", severity="information", timeout=10)
+                    self.call_from_thread(self._on_update_found, info)
             except Exception:
                 pass
         threading.Thread(target=work, daemon=True).start()
 
+    def _on_update_found(self, info):
+        """Runs on the UI thread: remember the update and surface it on the
+        garage screen as a one-click banner (plus a transient notification)."""
+        self._update_info = info
+        scr = self.screen
+        if isinstance(scr, GarageScreen):
+            scr.show_update(info)
+        self.notify(f"Update available: v{info.current} -> v{info.latest}. "
+                    "Press Ctrl+U (or use the banner) to install.",
+                    title="tuneassist", severity="information", timeout=8)
+
     def action_update_app(self):
-        """Ctrl+U: download + install the latest release in the background."""
+        """Ctrl+U / the garage button: download + install the latest release, then
+        relaunch into the new version."""
         import threading
         from . import update
 
-        self.notify("Checking for updates...", title="tuneassist", timeout=4)
+        self.notify("Downloading the latest version...", title="tuneassist", timeout=4)
 
         def work():
             try:
                 ok, msg = update.self_update()
             except Exception as e:               # pragma: no cover - defensive
                 ok, msg = False, str(e)
-            self.call_from_thread(
-                self.notify, msg, title="tuneassist",
-                severity="information" if ok else "warning", timeout=10)
+            self.call_from_thread(self._finish_update, ok, msg)
         threading.Thread(target=work, daemon=True).start()
+
+    def _finish_update(self, ok: bool, msg: str):
+        from . import update
+        self.notify(msg, title="tuneassist",
+                    severity="information" if ok else "warning", timeout=8)
+        if ok and update.is_frozen():
+            self.notify("Restarting into the new version...", title="tuneassist",
+                        timeout=3)
+            self.set_timer(1.8, update.relaunch)
 
     def action_cycle_theme(self):
         cur = self.theme if self.theme in self.THEMES else self.THEMES[0]
