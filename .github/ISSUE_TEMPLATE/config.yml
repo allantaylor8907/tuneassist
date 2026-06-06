@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Feature idea / question
+    url: https://github.com/allantaylor8907/tuneassist/discussions
+    about: For ideas, questions, and general tuning talk, start a Discussion.
+  - name: Share a log privately
+    url: https://tally.so/r/Ek6JWX
+    about: Don't want to post your log publicly? Send it through the submission form.
