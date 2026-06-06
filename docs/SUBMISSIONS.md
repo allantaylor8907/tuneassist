@@ -52,9 +52,40 @@ That's it. With a URL set:
 both behind a clear confirm that explains what's included. Leave `SUBMIT_URL`
 blank and the feature stays completely hidden.
 
+## What the data actually lets you do
+
+- **Add new platforms — yes.** The raw CSV carries the real channel names, units,
+  and values from that scanner. One genuine Sniper Dominator / LT Gen-5 / Ford
+  export is usually all it takes to write or fix that platform's loader and
+  channel patterns. This is the single highest-value thing a submission gives you.
+- **Build regression fixtures — yes.** Drop a submitted log into `tests/fixtures/`
+  with an expected outcome and you've locked in behavior (see DESIGN.md).
+- **Tell *what* was analyzed — yes.** `submission.json` is the telemetry: platform,
+  stage, findings, summary, hardware profile.
+- **Tell whether the analysis was *right* — only if the human says so.** The log +
+  what-the-tool-concluded lets you *spot* suspicious calls, but you can't confirm
+  them without ground truth. Capture that in the form (next section). Without it,
+  you have telemetry; with it, you have labeled data you can actually tune against.
+
+## Recommended form fields (turn telemetry into ground truth)
+
+Make your Tally/Google form ask the human what the log can't tell you:
+
+1. **File upload** (the submission zip) — required.
+2. **What's the car / what were you tuning?** — short text (cam, heads, boost,
+   fuel). Context the profile may not capture.
+3. **Did the analysis look right?** — single choice: *spot on / mostly / off /
+   not sure*. This one field is what makes a submission a labeled example.
+4. **If it was off, what did you actually find?** — long text. (e.g. "called it
+   lean cruise, it was a vacuum leak at the intake.")
+5. **Contact (optional)** — if they want a reply.
+
+The app already attaches what the tool concluded; these fields add the verdict.
+Together that's enough to fix a wrong detector with confidence, not guesswork.
+
 ## Reviewing what comes in
 
-Each submission is a self-contained zip: the CSV plus `submission.json`. Drop new
-logs that expose a wrong call into `tests/fixtures/` as regression fixtures (see
-DESIGN.md for what each known log should produce) — that's the loop that makes
-the tool smarter over time.
+Each submission is a self-contained zip: the CSV plus `submission.json`. Cross-
+reference the JSON's `finding_ids` against the human's "did it look right?" answer
+to find the detectors that need work, then promote the log into `tests/fixtures/`
+as a regression case — that's the loop that makes the tool smarter over time.

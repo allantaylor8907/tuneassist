@@ -1,7 +1,8 @@
-# Shows a "Sponsor" button on the repo. Fill in whichever you actually use;
-# leave the rest commented. GitHub Sponsors needs to be enabled on your account
-# first (https://github.com/sponsors) for the github: line to show.
-github: [allantaylor8907]
-# ko_fi: your_handle
-# buy_me_a_coffee: your_handle
-# custom: ["https://paypal.me/your_handle"]
+# Shows a "Sponsor" button on the repo. The custom: URL needs NO GitHub Sponsors
+# / Stripe / ID verification -- it's just a link, so a PayPal.me works fine.
+# Replace YOURHANDLE with your PayPal.me handle (paypal.me/YOURHANDLE).
+custom: ["https://paypal.me/YOURHANDLE"]
+# Enable these later if you set them up:
+# github: [allantaylor8907]      # needs GitHub Sponsors (Stripe/ID) enabled
+# ko_fi: yourhandle
+# buy_me_a_coffee: yourhandle

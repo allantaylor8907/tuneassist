@@ -191,8 +191,12 @@ The full reasoning behind every decision is in [DESIGN.md](DESIGN.md).
 
 tuneassist is MIT-licensed and free. No account, no cloud, no upsell, no log
 harvesting. If it saved you a trip to the dyno or a melted piston and you want to
-throw a few bucks toward more features, there's a **Sponsor** button up top —
-totally optional, beer money appreciated. Stars and bug reports help just as much.
+throw a few bucks toward more features, it's totally optional — beer money
+appreciated. Stars and bug reports help just as much.
+
+<p align="center">
+  <a href="https://paypal.me/YOURHANDLE"><img src="https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white" alt="Donate via PayPal" height="34"></a>
+</p>
 
 ---
 
