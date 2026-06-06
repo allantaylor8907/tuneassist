@@ -298,9 +298,10 @@ def _run_one(io: WizardIO, path: str, platform: str, opts: SessionOpts,
 
 
 def _maybe_offer_submission(io: WizardIO, path: str, cr, opts) -> None:
-    """Opt-in, dormant unless submit.SUBMIT_URL is set. Defaults to NO."""
+    """Opt-in, dormant unless submit.SUBMIT_URL is set. Defaults to NO. Live-only
+    (scripted/test sessions skip it so they don't consume the prompt)."""
     from . import submit
-    if not submit.is_enabled():
+    if io.scripted is not None or not submit.is_enabled():
         return
     if not io.confirm("\n[grey70]Help improve tuneassist by sharing this log? (only this "
                       "log + a short analysis summary -- no vehicle name)[/]", default=False):

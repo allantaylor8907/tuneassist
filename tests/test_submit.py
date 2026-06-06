@@ -11,10 +11,16 @@ FIX = os.path.join(os.path.dirname(__file__), "fixtures")
 RIDE = os.path.join(FIX, "ride42.csv")
 
 
-def test_disabled_by_default():
-    # no SUBMIT_URL configured -> the whole feature is dormant
-    assert submit.SUBMIT_URL == ""
-    assert submit.is_enabled() is False
+def test_is_enabled_tracks_url():
+    # is_enabled() purely reflects whether a SUBMIT_URL is configured
+    saved = submit.SUBMIT_URL
+    try:
+        submit.SUBMIT_URL = ""
+        assert submit.is_enabled() is False
+        submit.SUBMIT_URL = "https://tally.so/r/Ek6JWX"
+        assert submit.is_enabled() is True
+    finally:
+        submit.SUBMIT_URL = saved
 
 
 def test_metadata_is_non_identifying():

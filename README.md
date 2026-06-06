@@ -195,7 +195,7 @@ throw a few bucks toward more features, it's totally optional — beer money
 appreciated. Stars and bug reports help just as much.
 
 <p align="center">
-  <a href="https://paypal.me/YOURHANDLE"><img src="https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white" alt="Donate via PayPal" height="34"></a>
+  <a href="https://paypal.me/allantaylor8907"><img src="https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white" alt="Donate via PayPal" height="34"></a>
 </p>
 
 ---

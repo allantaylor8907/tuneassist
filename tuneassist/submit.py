@@ -25,7 +25,7 @@ import zipfile
 from . import __version__
 
 # Paste your file-collection form URL here to enable submissions. Blank = off.
-SUBMIT_URL = ""
+SUBMIT_URL = "https://tally.so/r/Ek6JWX"
 
 
 def is_enabled() -> bool:
