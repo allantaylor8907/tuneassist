@@ -49,6 +49,11 @@ STAGE_ORDER = {k: i for i, (k, _) in enumerate(STAGES)}
 CRUISE_MAP_MAX = 70.0
 WOT_MAP_MIN = 80.0
 
+# In MAF mode, a systemic offset this big (|median|%) across the map is VE-table
+# error, not MAF-curve error -- so we route the user back to the VE pass instead
+# of mislabeling a big whole-map shift as "tune the MAF curve".
+MAF_SYSTEMIC_PCT = 3.5
+
 
 @dataclass
 class AnalysisSummary:
@@ -179,8 +184,13 @@ def determine_stage(triage_state: str, summary: AnalysisSummary,
     if summary.n_confident == 0:
         return "DIAL_IDLE_CRUISE"
 
-    # 1) airflow not converged yet -> stay in the current airflow phase
+    # 1) airflow not converged yet -> stay in the current airflow phase. BUT a
+    # systemic whole-map offset in MAF mode is VE-table error (the MAF curve only
+    # makes sense once VE is right), so route back to the VE pass rather than
+    # calling a big shift "tune the MAF curve".
     if not summary.cruise_converged:
+        if airflow_mode == "maf" and abs(summary.median_pct) >= MAF_SYSTEMIC_PCT:
+            return "TUNE_VE_SD"
         return "TUNE_MAF" if airflow_mode == "maf" else "TUNE_VE_SD"
 
     # 2) VE (SD) converged -> next phase is the MAF curve (unless there's no MAF)
@@ -279,7 +289,12 @@ def prescribe(stage: str, summary: AnalysisSummary, triage_recs: list,
                          "Inj PW", "Duty Cycle", "CTS", "MAT", "Knock Retard"])
         off = summary.offset or {}
         actions = []
-        if gm and airflow_mode == "ve_sd":
+        if gm and airflow_mode == "maf":
+            actions.append("Heads up: you're set to MAF mode, but the cruise is still "
+                           "shifted across the whole map -- that's VE-TABLE error, not the "
+                           "MAF curve. Switch airflow to 'VE / MAF off', dial this VE pass "
+                           "in first, THEN come back and tune the MAF curve.")
+        elif gm and airflow_mode == "ve_sd":
             actions.append("MAF should be DISABLED for this pass (speed-density only) "
                            "so these trims are pure VE error.")
         if off.get("shape") == "global_offset":
@@ -314,13 +329,19 @@ def prescribe(stage: str, summary: AnalysisSummary, triage_recs: list,
     if stage == "TUNE_MAF":
         return Prescription(
             stage, STAGE_TITLE[stage],
-            "VE (speed-density) is converged. Now RE-ENABLE the MAF and tune the MAF "
-            "curve: with VE correct, the SD airmass is a trustworthy reference, so any "
-            "residual trim with the MAF on is MAF-curve error.",
+            "VE (speed-density) is dialed -- the cruise trims are centered. This step is "
+            "the MAF curve, which is a DIFFERENT table from the VE table you just did.",
             actions=[
-                "Re-enable the MAF (undo the SD-only/disable change).",
-                "Apply the frequency-indexed MAF correction (Hz -> %) to the MAF "
-                "calibration table -- NOT the VE table.",
+                "Two different tables, don't mix them up: the VE table is the RPM x MAP "
+                "grid you already corrected in speed-density. The MAF table is a SINGLE "
+                "ROW indexed by frequency (Hz) -- in HP Tuners it's 'Airflow vs "
+                "Frequency'. This step edits the MAF table, NOT the VE table.",
+                "Re-enable the MAF (undo the SD-only/disable change from the VE pass).",
+                "Apply the frequency-indexed correction (Hz -> %) to that MAF 'Airflow "
+                "vs Frequency' row.",
+                "You MUST log the MAF Frequency (Hz) channel for this -- without it there's "
+                "no way to build the curve correction. If it's not in the log, add it and "
+                "re-capture.",
                 "MAF is a steady-state sensor: trust steady cruise cells, ignore transients.",
             ],
             drive="Steady cruise sweep that walks airflow up smoothly (gentle, "

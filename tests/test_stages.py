@@ -28,6 +28,21 @@ def test_running_with_cruise_error_maf_mode_is_tune_maf():
     assert determine_stage("RUNNING_DRIVE", s, airflow_mode="maf") == "TUNE_MAF"
 
 
+def test_maf_mode_systemic_offset_routes_back_to_ve():
+    # a big whole-map shift in MAF mode is VE-table error, not MAF-curve work
+    # (e.g. the 2004 5.3 log: median ~-8% across the map) -> send back to VE
+    s = AnalysisSummary(n_confident=20, cruise_max_abs_pct=12.0, max_abs_pct=12.0,
+                        median_pct=-8.3)
+    assert determine_stage("RUNNING_DRIVE", s, airflow_mode="maf") == "TUNE_VE_SD"
+
+
+def test_maf_mode_small_residual_stays_maf():
+    # centered map with only a couple outlier cells = genuine MAF-curve fine-tuning
+    s = AnalysisSummary(n_confident=20, cruise_max_abs_pct=5.0, max_abs_pct=5.0,
+                        median_pct=-0.8)
+    assert determine_stage("RUNNING_DRIVE", s, airflow_mode="maf") == "TUNE_MAF"
+
+
 def test_ve_sd_converged_moves_to_maf():
     s = AnalysisSummary(n_confident=20, cruise_max_abs_pct=0.5, max_abs_pct=0.5)
     assert determine_stage("RUNNING_DRIVE", s, airflow_mode="ve_sd") == "TUNE_MAF"

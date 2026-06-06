@@ -211,7 +211,7 @@ def self_update(info: UpdateInfo | None = None) -> tuple[bool, str]:
                 "    pip install -U tuneassist")
     info = info or check_for_update()
     if info is None:
-        return (True, f"Already up to date (v{__version__}).")
+        return (True, f"You're on the latest version (v{__version__}). Nothing to update.")
     if not info.asset_url:
         return (False,
                 f"v{info.latest} is available but has no binary for this OS.\n"

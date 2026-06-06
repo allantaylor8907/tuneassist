@@ -125,16 +125,20 @@ class TextPrompt(ModalScreen[str]):
 
 
 class ConfirmDialog(ModalScreen[bool]):
-    def __init__(self, prompt: str):
+    def __init__(self, prompt: str, yes_label: str = "Yes",
+                 no_label: str = "Cancel", yes_variant: str = "error"):
         super().__init__()
         self._prompt = prompt
+        self._yes_label = yes_label
+        self._no_label = no_label
+        self._yes_variant = yes_variant
 
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
-            yield Label(self._prompt)
+            yield Static(self._prompt, id="dialog-text")
             with Horizontal(id="dialog-buttons"):
-                yield Button("Yes, delete", variant="error", id="yes")
-                yield Button("Cancel", variant="primary", id="no")
+                yield Button(self._yes_label, variant=self._yes_variant, id="yes")
+                yield Button(self._no_label, variant="primary", id="no")
 
     def on_button_pressed(self, e: Button.Pressed):
         self.dismiss(e.button.id == "yes")
@@ -252,7 +256,8 @@ class GarageScreen(Screen):
                 garage.delete(self.app.data, name)
                 self.app._save()
                 self._reload()
-        self.app.push_screen(ConfirmDialog(f"Delete '{name}' permanently?"), done)
+        self.app.push_screen(ConfirmDialog(f"Delete '{name}' permanently?",
+                                           yes_label="Yes, delete"), done)
 
 
 # --------------------------------------------------------------------------
@@ -556,17 +561,18 @@ class AnalyzeScreen(Screen):
                 return
             try:
                 bundle, url = submit.submit(self._last_path, self._cr, self.app.opts)
-                self.notify(f"Saved {os.path.basename(bundle)} and opened the upload "
-                            "form in your browser — attach that file there. Thank you!",
-                            title="tuneassist", severity="information", timeout=12)
+                self.notify("Thanks! I saved the bundle, opened your file explorer "
+                            "to it, and opened the upload form — drag that .zip into "
+                            "the form.", title="tuneassist", severity="information",
+                            timeout=12)
             except Exception as ex:                 # pragma: no cover - defensive
                 self.notify(f"Couldn't prepare the submission: {ex}", severity="error")
         self.app.push_screen(ConfirmDialog(
             "Share this log to help improve tuneassist?\n\n"
-            "It bundles ONLY this log file plus a short analysis summary (no garage, "
-            "no vehicle name). Your browser opens an upload page; you attach the file "
-            "and can add your contact there if you want a reply. Nothing is sent "
-            "automatically."), go)
+            "Bundles ONLY this log + a short analysis summary (no vehicle name). "
+            "I'll save the file, open your file explorer to it, and open the upload "
+            "form so you can drag it in. Nothing is ever sent automatically.",
+            yes_label="Yes, share", no_label="No thanks", yes_variant="success"), go)
 
     # ---- interactive correction grid (RPM x MAP, colored, clickable) ----
     def _populate_grid(self, cr):
@@ -697,15 +703,16 @@ class TuneAssistApp(App):
     #mods { grid-size: 2; grid-rows: auto; grid-gutter: 0 2; height: auto; width: 76; margin: 0 0 1 0; }
     #mods Checkbox { width: 1fr; height: auto; }
     #dialog {
-        width: 60; height: auto; padding: 1 2; margin: 4 0;
+        width: 72; max-width: 90%; height: auto; padding: 1 2; margin: 4 0;
         background: $panel; border: thick $primary; align: center middle;
     }
+    #dialog-text { width: 1fr; margin: 0 0 1 0; }
     #dialog-buttons { align: center middle; }
     #dialog-buttons Button { margin: 0 1; }
     ModalScreen { align: center middle; }
     """
     BINDINGS = [("ctrl+c", "quit", "Quit"), ("ctrl+t", "cycle_theme", "Theme"),
-                ("ctrl+u", "update_app", "Update")]
+                ("ctrl+u", "update_app", "Check for update")]
     THEMES = ["textual-dark", "gruvbox", "nord", "tokyo-night",
               "catppuccin-mocha", "textual-light"]
 
@@ -768,7 +775,7 @@ class TuneAssistApp(App):
         import threading
         from . import update
 
-        self.notify("Downloading the latest version...", title="tuneassist", timeout=4)
+        self.notify("Checking for updates...", title="tuneassist", timeout=3)
 
         def work():
             try:

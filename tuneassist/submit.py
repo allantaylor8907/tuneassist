@@ -18,6 +18,8 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
+import sys
 import time
 import webbrowser
 import zipfile
@@ -102,8 +104,25 @@ def open_form() -> bool:
         return False
 
 
+def reveal(path: str) -> None:
+    """Open the OS file manager with the bundle selected, so the user can drag it
+    straight into the upload form. Fails silently."""
+    try:
+        if sys.platform.startswith("win"):
+            # explorer returns exit code 1 even on success; don't check it
+            subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", path])
+        else:
+            subprocess.Popen(["xdg-open", os.path.dirname(path) or "."])
+    except Exception:
+        pass
+
+
 def submit(log_path: str, cr, opts, note: str = "", contact: str = "") -> tuple[str, str]:
-    """Build the bundle and open the submission form. Returns (bundle_path, url)."""
+    """Build the bundle, reveal it in the file manager, and open the submission
+    form. Returns (bundle_path, url). Never sends anything itself."""
     bundle = build_bundle(log_path, cr, opts, note, contact)
+    reveal(bundle)
     open_form()
     return bundle, SUBMIT_URL
