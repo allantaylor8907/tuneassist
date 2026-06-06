@@ -34,6 +34,17 @@ def test_pick_asset_matches_this_os(monkeypatch=None):
         assert url == expect
 
 
+def test_update_bat_handles_paths_with_spaces_and_parens():
+    # the failing real-world case: 'tuneassist-windows-x64 (2).exe'
+    exe = r"C:\Users\Allan\Downloads\tuneassist-windows-x64 (2).exe"
+    new = exe + ".new"
+    s = update._update_bat_script(exe, new)
+    assert f'move /y "{new}" "{exe}"' in s          # both paths quoted
+    assert f'start "" "{exe}"' in s                  # relaunch quoted
+    assert ":loop" in s and "goto loop" in s         # retries until unlocked
+    assert s.endswith('del "%~f0"\r\n')              # self-deletes
+
+
 def test_self_update_refuses_when_not_frozen():
     # running from source -> point at the package manager, don't touch anything
     assert not update.is_frozen()

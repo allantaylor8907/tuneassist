@@ -219,41 +219,88 @@ def self_update(info: UpdateInfo | None = None) -> tuple[bool, str]:
 
     exe = sys.executable
     new = exe + ".new"
-    if not _download(info.asset_url, new):
-        return (False, f"Download failed. Get it manually: {info.page_url}")
+    if not _download(info.asset_url, new) or not os.path.exists(new) \
+            or os.path.getsize(new) < 1_000_000:
+        # a real binary is tens of MB; a tiny/missing file means the download was
+        # blocked or truncated (often antivirus on an unsigned exe).
+        try:
+            os.remove(new)
+        except Exception:
+            pass
+        return (False, "The download didn't complete -- antivirus may have blocked "
+                f"the unsigned file. Get it manually: {info.page_url}")
 
     try:
         if sys.platform.startswith("win"):
-            old = exe + ".old"
-            try:
-                if os.path.exists(old):
-                    os.remove(old)
-            except Exception:
-                pass
-            os.replace(exe, old)        # rename the running exe (allowed on Windows)
-            os.replace(new, exe)        # move the new one into place
-            # `old` is deleted on next launch (cleanup_old_binary)
-        else:
-            os.chmod(new, 0o755)
-            os.replace(new, exe)        # atomic on POSIX; running process keeps its inode
+            # You can't reliably overwrite a running .exe in-process, so hand off
+            # to a tiny batch script: it waits until we exit (the file unlocks),
+            # swaps the new binary in, and relaunches. The running exe is never
+            # touched by us, so a failure can't brick the install.
+            return _windows_handoff(exe, new, info)
+        os.chmod(new, 0o755)
+        os.replace(new, exe)            # atomic on POSIX; running process keeps its inode
     except Exception as e:
         try:
             os.remove(new)
         except Exception:
             pass
-        return (False, f"Could not replace the binary ({e}). Get it manually: {info.page_url}")
+        return (False, f"Could not install the update ({e}). Get it manually: {info.page_url}")
 
     return (True, f"Updated to v{info.latest}. Restart tuneassist to run the new version.")
 
 
+def _update_bat_script(exe: str, new: str) -> str:
+    """The batch handoff: wait, then loop MOVE until it succeeds (the running exe
+    stays locked until this process exits), then start the new version and delete
+    the script. Paths are quoted so spaces/parens in the path are safe."""
+    return (
+        "@echo off\r\n"
+        "ping -n 2 127.0.0.1 >nul\r\n"
+        ":loop\r\n"
+        f'move /y "{new}" "{exe}" >nul 2>&1\r\n'
+        "if errorlevel 1 (\r\n"
+        "  ping -n 2 127.0.0.1 >nul\r\n"
+        "  goto loop\r\n"
+        ")\r\n"
+        f'start "" "{exe}"\r\n'
+        'del "%~f0"\r\n'
+    )
+
+
+def _windows_handoff(exe: str, new: str, info: "UpdateInfo") -> tuple[bool, str]:
+    """Write + launch a detached batch script that swaps the binary once this
+    process exits, then starts the new one."""
+    import subprocess
+    import tempfile
+    bat = os.path.join(tempfile.gettempdir(), "tuneassist_update.bat")
+    script = _update_bat_script(exe, new)
+    try:
+        with open(bat, "w", encoding="ascii") as f:
+            f.write(script)
+        DETACHED_PROCESS = 0x00000008
+        CREATE_NO_WINDOW = 0x08000000
+        subprocess.Popen(["cmd", "/c", bat], close_fds=True,
+                         creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW)
+    except Exception as e:
+        try:
+            os.remove(new)
+        except Exception:
+            pass
+        return (False, f"Could not start the updater ({e}). Get it manually: {info.page_url}")
+    return (True, f"Installing v{info.latest} -- the app will close and reopen on the "
+                  "new version in a moment.")
+
+
 def relaunch() -> None:
-    """Start the freshly-installed binary and exit this one. Only meaningful for
-    the frozen build (after self_update has swapped the file in place)."""
+    """Exit (and on POSIX, start the freshly-installed binary). Only meaningful
+    for the frozen build. On Windows the update batch script handles the restart,
+    so we just exit to release the file lock."""
     if not is_frozen():
         return
     try:
-        import subprocess
-        subprocess.Popen([sys.executable, *sys.argv[1:]])
+        if not sys.platform.startswith("win"):
+            import subprocess
+            subprocess.Popen([sys.executable, *sys.argv[1:]])
     except Exception:
         pass
     os._exit(0)
