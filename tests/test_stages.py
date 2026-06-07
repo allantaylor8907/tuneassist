@@ -101,6 +101,26 @@ def test_prescribe_tune_maf_says_reenable_and_hz():
     assert any("RE-ENABLE" in a.upper() or "MAF cal" in a or "Hz" in a for a in rx.actions)
 
 
+def test_prescribe_gen4_is_maf_only_not_ve_table():
+    # Gen 4 has no VE table -> prescription must say MAF-only / dynamic airflow,
+    # and must NOT tell the user to paste into a "Main VE table".
+    s = AnalysisSummary(n_confident=20, cruise_max_abs_pct=8.0, max_abs_pct=8.0,
+                        offset={"shape": "table_shape", "median_pct": -8.0,
+                                "n_cells": 30, "spread_pct": 4.0})
+    rx = prescribe("TUNE_VE_SD", s, [], "gm", architecture="gm_gen4_ls")
+    blob = " ".join(rx.actions)
+    assert "GEN 4" in blob and ("Dynamic Airflow" in blob or "MAF-only" in blob)
+    assert "Main VE table" not in blob
+
+
+def test_prescribe_gen3_still_uses_ve_table():
+    s = AnalysisSummary(n_confident=20, cruise_max_abs_pct=8.0, max_abs_pct=8.0,
+                        offset={"shape": "table_shape", "median_pct": -8.0,
+                                "n_cells": 30, "spread_pct": 4.0})
+    rx = prescribe("TUNE_VE_SD", s, [], "gm", architecture="gm_gen3_ls")
+    assert any("VE table" in a for a in rx.actions)
+
+
 def test_prescribe_spark_refuses_without_knock():
     class _NoSpark:
         can_run = False

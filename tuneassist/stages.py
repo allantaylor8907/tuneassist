@@ -209,12 +209,15 @@ def determine_stage(triage_state: str, summary: AnalysisSummary,
 
 def prescribe(stage: str, summary: AnalysisSummary, triage_recs: list,
               platform: str = "gm", airflow_mode: str = "ve_sd",
-              cam_points=None, spark=None) -> Prescription:
+              cam_points=None, spark=None, architecture: str = "gm_gen3_ls") -> Prescription:
     """Turn a stage into a concrete next-move prescription. Non-running stages
     lean on triage's targeted recommendations; running stages reason off the
-    analysis digest, the airflow mode, optional cam starting points, and the
-    optional spark result."""
+    analysis digest, the airflow mode, optional cam starting points, the optional
+    spark result, and the engine architecture (Gen 3 vs Gen 4 tune differently --
+    see docs/TUNING_BY_PLATFORM.md)."""
     gm = platform != "holley"
+    gen4 = architecture == "gm_gen4_ls"
+    gen5 = architecture == "gm_gen5_lt"
     cam_notes = list(cam_points.notes) if cam_points else []
 
     if stage == "GET_RUNNING":
@@ -289,25 +292,41 @@ def prescribe(stage: str, summary: AnalysisSummary, triage_recs: list,
                          "Inj PW", "Duty Cycle", "CTS", "MAT", "Knock Retard"])
         off = summary.offset or {}
         actions = []
-        if gm and airflow_mode == "maf":
+        if gen4:
+            # Gen 4 has no real VE table -- it's Virtual VE (coefficients). Pros
+            # tune MAF-only instead (docs/TUNING_BY_PLATFORM.md).
+            actions.append("GEN 4 (E38/E67): there's no editable VE table -- it's "
+                           "Virtual VE. Don't chase VVE. Set 'Dynamic Airflow High-RPM "
+                           "Disable = 0' to run MAF-only, then tune the MAF curve against "
+                           "AFR-error vs frequency (iterate to ~0-3% error).")
+            actions.append("Paste the % error below onto the MAF curve, not a VE table. "
+                           "Gen 4 also likes LESS timing (~23 deg ceiling, CR-dependent) "
+                           "and a slightly leaner WOT (~12.5).")
+        elif gen5:
+            actions.append("GEN 5 (LT, direct injection): airflow is VVE + a DI fuel "
+                           "model, and driver-demand torque management will fight mods. "
+                           "Use the % error below as airflow guidance, but expect to also "
+                           "raise torque/driver-demand limits and mind the DI fuel ceiling.")
+        if gm and not gen4 and not gen5 and airflow_mode == "maf":
             actions.append("Heads up: you're set to MAF mode, but the cruise is still "
                            "shifted across the whole map -- that's VE-TABLE error, not the "
                            "MAF curve. Switch airflow to 'VE / MAF off', dial this VE pass "
                            "in first, THEN come back and tune the MAF curve.")
-        elif gm and airflow_mode == "ve_sd":
+        elif gm and not gen4 and not gen5 and airflow_mode == "ve_sd":
             actions.append("MAF should be DISABLED for this pass (speed-density only) "
                            "so these trims are pure VE error.")
-        if off.get("shape") == "global_offset":
-            actions.append(
-                f"The correction is nearly FLAT (~{off.get('median_pct')}% across "
-                f"{off.get('n_cells')} cells). That's a GLOBAL offset -- fix it with a "
-                "single scalar (injector flow / fuel pressure / SD multiplier) before "
-                "reshaping the VE table.")
-        else:
-            actions.append(
-                "The correction VARIES across RPM/MAP -- it's a VE table-SHAPE issue. "
-                "Paste the multiplier grid into your Main VE table "
-                + ("(multiply-by-percent)." if gm else "(base fuel table)."))
+        if not gen4 and not gen5:
+            if off.get("shape") == "global_offset":
+                actions.append(
+                    f"The correction is nearly FLAT (~{off.get('median_pct')}% across "
+                    f"{off.get('n_cells')} cells). That's a GLOBAL offset -- fix it with a "
+                    "single scalar (injector flow / fuel pressure / SD multiplier) before "
+                    "reshaping the VE table.")
+            else:
+                actions.append(
+                    "The correction VARIES across RPM/MAP -- it's a VE table-SHAPE issue. "
+                    "Paste the multiplier grid into your Main VE table "
+                    + ("(multiply-by-percent)." if gm else "(base fuel table)."))
         if summary.o2_suspect_cells:
             actions.append(
                 f"{summary.o2_suspect_cells} cell(s) flagged O2/STOICH: the wideband "
