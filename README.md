@@ -133,13 +133,13 @@ reference once VE is right). Spark is **knock-governed**: it pulls timing where
 knock shows, and only adds timing toward MBT if you ask, one small step per pull.
 **No knock channel logged, no timing advice. Period.**
 
-### Prefer a plain text walkthrough?
+### No terminal UI? Plain report
 
-    tuneassist --wizard            # the classic guided session, no mouse needed
-    tuneassist your_log.csv        # a log path also drops you into it
+    tuneassist your_log.csv        # quick non-interactive report
+    tuneassist your_log.csv --batch
 
-Same brain, asked as a few questions in the terminal. Handy over SSH or on a
-machine where the full UI won't draw right.
+A one-shot text report (same analysis engine) for SSH, scripts, or a terminal
+the full UI can't draw in.
 
 ### Headless / scripting
 
