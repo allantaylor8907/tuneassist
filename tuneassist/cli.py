@@ -109,8 +109,6 @@ def main(argv=None):
                    help="non-interactive: print the plain report and exit")
     p.add_argument("--tui", action="store_true",
                    help="launch the full Textual UI (this is the default with no args)")
-    p.add_argument("--wizard", action="store_true",
-                   help="use the classic guided text session instead of the Textual UI")
     p.add_argument("--demo", action="store_true",
                    help="launch the locked-down demo (bundled sample logs only)")
     p.add_argument("--json", action="store_true",
@@ -167,18 +165,14 @@ def main(argv=None):
         print(json.dumps(cr.to_dict(), indent=2))
         return
 
-    if args.batch and args.log:
+    # A bare log path -> the quick non-interactive report (also covers SSH / dumb
+    # terminals where the TUI can't draw). --json above is the headless contract.
+    if args.log:
         _print_update_notice()
         run(args.log, args.platform, args.out_dir)
         return
-
-    # Classic guided text session: when explicitly asked for, or when a log path
-    # is handed in directly (that flow is path-aware; the TUI starts from the
-    # garage instead).
-    if args.wizard or args.log:
-        _print_update_notice()
-        from .wizard import run_session
-        run_session(initial_log=args.log, out_dir=args.out_dir)
+    if args.batch:
+        print("--batch needs a log file, e.g.  tuneassist your_log.csv --batch")
         return
 
     # Default (e.g. double-clicking the downloaded binary): the full Textual UI.

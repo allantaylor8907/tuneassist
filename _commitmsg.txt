@@ -1,0 +1,19 @@
+Drop the Rich wizard; TUI is the only interactive UI
+
+The TUI is the default and primary interface. The classic Rich wizard + its
+render adapter added a second interactive surface to maintain for little gain:
+headless use is covered by --json (stable contract) and --batch (plain report),
+and the TUI covers interactive.
+
+- Remove wizard.py, render.py, test_wizard.py (~700 lines).
+- cli.py: drop --wizard; a bare log path or --batch -> the plain report
+  (cli.run), which still serves SSH / scripts / terminals the TUI can't draw in.
+- test_garage imported the garage codec via wizard's back-compat re-exports;
+  point it at core directly.
+- Docs (README, CLAUDE) updated to reflect TUI + --batch/--json only.
+
+Coverage check: the wizard's analysis-behavior tests are already covered in
+test_core (protuner12 gating, jr42 cold, ride42 stages) and test_stages, and
+garage/setup in test_tui + test_garage. All 12 suites green.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>

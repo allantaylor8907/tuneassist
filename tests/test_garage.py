@@ -5,7 +5,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from tuneassist import garage, cams
 from tuneassist.profile import EngineProfile
 from tuneassist.engine_gm import Config
-from tuneassist.wizard import SessionOpts, _opts_to_record, _record_to_opts
+from tuneassist.core import (SessionOpts, opts_to_record as _opts_to_record,
+                             record_to_opts as _record_to_opts)
 
 
 def test_load_missing_returns_empty():

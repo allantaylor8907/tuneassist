@@ -87,17 +87,14 @@ tunable state.
   (bolt-ons explain the data — DESIGN §13).
 - `panels.py` — **pure Rich renderable *builders*** (no printing/IO): banner,
   journey bar, triage, heatmaps, cross-check, spark, MAF, safety, prescription,
-  and `build_report(cr, …)` (the whole result as one Group). Shared by both UIs.
-- `render.py` — thin Rich-Console adapter that *prints* `panels.*` for the
-  classic wizard. No construction logic; keeps wizard output unchanged.
-- `tui.py` — **the Textual app** (`run_tui`): GarageScreen (pick/new/rename/
-  delete) → SetupScreen (form) → AnalyzeScreen (log input → `panels.build_report`
-  + journey bar). Pure consumer of `core`; mounts shared `panels.*` in Static
-  widgets. Tested via the Textual pilot harness.
-- `wizard.py` — the classic Rich guided session: a *thin renderer* over
-  `core.analyze_log`. IO goes through `WizardIO` so the flow is scriptable in
-  tests. Asks setup once, remembers it for the session, persists per-vehicle via
-  `garage`. Re-exports core helpers for back-compat.
+  and `build_report(cr, …)` (the whole result as one Group). Used by the TUI and
+  the plain `--batch`/`cli.run` report path.
+- `tui.py` — **the Textual app** (`run_tui`), the one interactive UI: GarageScreen
+  (pick/new/rename/delete) → SetupScreen (form) → AnalyzeScreen (log input →
+  `panels.build_report` + journey bar). Pure consumer of `core`; mounts shared
+  `panels.*` in Static widgets. Tested via the Textual pilot harness.
+  (The old Rich `wizard.py`/`render.py` were removed — TUI + `--batch`/`--json`
+  cover interactive + headless.)
 - `garage.py` — on-disk per-vehicle memory (`~/.tuneassist/garage.json`): pure
   load/save/list/get/upsert, no package deps. Tolerates missing/corrupt files.
   Tests pass a temp `garage_path` so they never touch real home. Tested.
@@ -113,7 +110,7 @@ tunable state.
   and every network path fails silently. pip/pipx installs are pointed at the
   package manager. Tested (all offline).
 - `submit.py` — **opt-in log submission** (off until `SUBMIT_URL` is set, stdlib
-  only). After an analysis the TUI ("Share log" button + `s`) and wizard offer to
+  only). After an analysis the TUI ("Share log" button + `s`) offers to
   bundle ONLY the analyzed log + a non-identifying `submission.json` (version,
   platform, stage, profile, summary, finding ids, user-typed note/contact — never
   the garage/nickname) into `~/.tuneassist/submissions/*.zip`, then open a free
@@ -128,18 +125,17 @@ tunable state.
   entry). Resolves the launch target for frozen binary vs pip/console-script vs
   `python -m`. Writers factored for testing; paths with spaces quoted. Tested.
 - `cli.py` — orchestrator. No args → Textual app (the default, so the downloaded
-  binary opens the UI on double-click); `--wizard` or a bare log path → classic
-  Rich guided session; `--tui` → Textual app; `--demo` → locked-down demo;
-  `--batch` → plain report; `--json` → headless JSON.
-  `--version`, `--check-update`, `--update`, `--install-shortcut`; a throttled
-  one-line update notice precedes the wizard/batch flows. Version is
-  single-sourced in `tuneassist/__init__.py` (`__version__`); pyproject reads it
-  dynamically.
+  binary opens the UI on double-click); a bare log path or `--batch` → plain
+  text report (`cli.run`, for SSH/scripts); `--tui` → Textual app; `--demo` →
+  locked-down demo; `--json` → headless JSON. `--version`, `--check-update`,
+  `--update`, `--install-shortcut`; a throttled one-line update notice precedes
+  the report/batch flows. Version is single-sourced in `tuneassist/__init__.py`
+  (`__version__`); pyproject reads it dynamically.
 
 ## Architecture / distribution
 - **UI is decoupled from the engine.** `core.py` is headless (data in → data out);
-  `wizard.py`/`render.py` are a presentation layer over it. Build new UIs against
-  `core.analyze_log(...).to_dict()`, never by importing render/wizard.
+  the TUI / `--batch` report are a presentation layer over it. Build new UIs against
+  `core.analyze_log(...).to_dict()`, never by importing the TUI.
 - **Packaging is proven:** PyInstaller `--onefile` from `packaging/entry.py`
   yields a ~32 MB single binary that runs the whole pipeline with no Python
   installed (validated on Windows). `.github/workflows/build.yml` builds
