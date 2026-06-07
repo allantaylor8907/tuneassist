@@ -214,6 +214,28 @@ def test_hptuners_comma_in_channel_name_is_repaired():
         assert abs(float(pd.to_numeric(df["AEM - AFR"]).iloc[0]) - 14.2) < 0.01
 
 
+def test_no_map_log_explains_missing_load_axis():
+    # Ford/OBD-II style: RPM + trims but no manifold MAP -> can't build the grid,
+    # but the trim diagnosis still applies and we say why + name the Ford case.
+    import numpy as np, pandas as pd, tempfile
+    n = 1500
+    rpm = np.clip(1500 + 1400 * np.sin(np.arange(n) / 35), 700, 4200)
+    df = pd.DataFrame({"Time": np.arange(n) * 0.05, "Engine RPM": rpm,
+                       "Throttle Position": np.clip((rpm - 700) / 3500 * 60, 0, 60),
+                       "Coolant Temp": np.full(n, 195.0),
+                       "Short Term Fuel Trim Bank 1": np.full(n, -8.0),
+                       "Long Term Fuel Trim Bank 1": np.zeros(n)})
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "nomap.csv")
+        df.to_csv(p, index=False)
+        cr = analyze_log(p, _opts())
+    assert not cr.has_grid
+    assert cr.empty_reason and "MAP" in cr.empty_reason
+    blob = " ".join(cr.prescription.actions + [cr.prescription.drive]).lower()
+    assert "map" in blob and "ford" in blob
+    assert any(f.id in ("RICH_CRUISE", "LEAN_CRUISE") for f in cr.findings)
+
+
 def test_no_rpm_channel_with_data_points_at_rpm():
     # a log with rows but no RPM channel -> tell the user to add Engine RPM
     import numpy as np, pandas as pd

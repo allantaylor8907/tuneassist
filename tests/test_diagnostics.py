@@ -267,6 +267,15 @@ def test_logging_tips_are_stage_gated():
     assert "commanded" in spark
 
 
+def test_logging_tips_suggests_map_when_absent():
+    df = _base().drop(columns=["MAP"])
+    df["Short Term Fuel Trim Bank 1"] = 2.0
+    df["Long Term Fuel Trim Bank 1"] = 0.0
+    f = [x for x in diagnose(df, resolve_columns(df), Config(), stage="DIAL_IDLE_CRUISE")
+         if x.id == "LOGGING_TIPS"]
+    assert f and any("intake map" in c.lower() for c in f[0].corrections)
+
+
 def test_logging_tips_silent_when_well_instrumented():
     # everything the coach would ask for is present -> no nudge
     df = _base()
