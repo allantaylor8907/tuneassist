@@ -14,9 +14,18 @@ API) and a safety requirement (autonomous closed-loop writes to an engine can
 hurt it). Do not add a "write the tune" feature.
 
 ## Platforms
-- **GM / HPTuners** (Gen 3 & 4 LS — P01/P59, E38, E40, E67). Speed-density VE
+Three independent axes (see **docs/PLATFORMS.md**): **platform** (tuning
+software/log format — HP Tuners, Holley), **make** (GM, Ford, Mopar …), and
+**architecture** (gm_gen3_4_ls, ford_coyote, …) where the airflow/spark strategy
+lives. The internal `platform` value is still `"gm"`/`"holley"` for back-compat
+(`"gm"` == the HP Tuners platform legacy value); `core.platform_label()` renders
+"HP Tuners". `make`/`architecture` are new optional `SessionOpts`/garage/to_dict
+fields, auto-detected (`detect_make`) or user-picked. Phase 2 will extract the
+GM-LS analysis into an architecture strategy module.
+- **HP Tuners** (Gen 3 & 4 LS — P01/P59, E38, E40, E67). Speed-density VE
   table + MAF, conventional. NOT the 2019+ Global B neural-net airflow model.
 - **Holley EFI** (Terminator X, Sniper). Self-learning, integrated wideband.
+- Ethanol content is auto-detected from a flex-fuel channel (`stoich_from_ethanol`).
 
 ## Hard constraint: native binary logs are NOT parseable
 HPTuners `.hpl` and Holley `.dl` are binary float streams that do **not** contain

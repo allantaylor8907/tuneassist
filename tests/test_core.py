@@ -214,6 +214,47 @@ def test_hptuners_comma_in_channel_name_is_repaired():
         assert abs(float(pd.to_numeric(df["AEM - AFR"]).iloc[0]) - 14.2) < 0.01
 
 
+def test_platform_make_architecture_axes_in_contract():
+    from tuneassist.core import platform_label, stoich_from_ethanol
+    assert platform_label("gm") == "HP Tuners" and platform_label("holley") == "Holley EFI"
+    assert 9.5 < stoich_from_ethanol(85) < 10.0     # E85 ~9.85
+    d = analyze_log(os.path.join(FIX, "ride42.csv"), _opts()).to_dict()
+    assert d["platform"] == "gm" and d["platform_label"] == "HP Tuners"
+    assert d["make"] == "gm" and d["architecture"] == "gm_gen3_4_ls"
+
+
+def test_legacy_garage_record_without_make_loads():
+    # a garage saved before the make/architecture axes existed must still load
+    from tuneassist.core import record_to_opts, opts_to_record
+    plat, opts = record_to_opts({"platform": "gm", "stoich": 14.7,
+                                 "airflow_mode": "maf"})
+    assert plat == "gm" and opts.make == "gm" and opts.architecture == "gm_gen3_4_ls"
+    rec = opts_to_record(plat, opts)
+    assert rec["make"] == "gm" and rec["architecture"] == "gm_gen3_4_ls"
+
+
+def test_ethanol_channel_sets_stoich_and_flags_flex_fuel():
+    import numpy as np, pandas as pd, tempfile
+    n = 1500
+    rpm = np.clip(1500 + 1400 * np.sin(np.arange(n) / 35), 700, 4200)
+    mapk = np.clip(45 + 30 * np.sin(np.arange(n) / 28), 22, 95)
+    df = pd.DataFrame({"Time": np.arange(n) * 0.05, "Engine RPM": rpm,
+                       "Intake Manifold Absolute Pressure": mapk,
+                       "Throttle Position": np.clip(mapk - 20, 0, 80),
+                       "Coolant Temp": np.full(n, 195.0),
+                       "Commanded AFR": np.full(n, 14.7),
+                       "Ethanol Fuel %": np.full(n, 85.0),
+                       "Short Term Fuel Trim Bank 1": np.full(n, 3.0),
+                       "Long Term Fuel Trim Bank 1": np.zeros(n)})
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "e85.csv")
+        df.to_csv(p, index=False)
+        cr = analyze_log(p, _opts())
+    assert any(f.id == "FUEL_ETHANOL" for f in cr.findings)
+    assert any("ethanol" in n.lower() for n in cr.notes)
+    assert cr.summary is not None  # ran with the E85 stoich, no crash
+
+
 def test_no_map_log_explains_missing_load_axis():
     # Ford/OBD-II style: RPM + trims but no manifold MAP -> can't build the grid,
     # but the trim diagnosis still applies and we say why + name the Ford case.

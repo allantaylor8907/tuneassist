@@ -70,6 +70,7 @@ HOLLEY_PATTERNS = {
     "ase":         [r"afterstart", r"after.?start"],
     "warmup_enr":  [r"coolant enr", r"warm.?up enr"],
     "iat_enr":     [r"air temp enr", r"\bmat enr"],
+    "ethanol":     [r"ethanol", r"flex.*fuel", r"fuel.*alcohol"],
 }
 
 
