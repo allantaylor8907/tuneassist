@@ -271,7 +271,17 @@ def _blocked_prescription(reason: str, cfg: Config, platform: str):
     """Tailored next-step when the log ran but yielded no usable cells."""
     reason = reason.replace("RESULT: ", "")
     cold = "operating temp" in reason
-    if cold:
+    no_map = "manifold-pressure" in reason or "load axis" in reason
+    if no_map:
+        action = ("Add an Intake MAP channel (kPa) -- it's the load axis. The "
+                  "correction grid is RPM x MAP, so without manifold pressure there's "
+                  "nothing to bin the fuel error against. Your fuel trims still read "
+                  "fine (see the diagnosis), this just can't become a table yet.")
+        drive = ("Re-log with Intake MAP added. NOTE: if this is a Ford / OBD-II log "
+                 "(it logs Absolute Load % and a lambda wideband instead of MAP), "
+                 "tuneassist targets GM speed-density + Holley -- the trim read above "
+                 "applies, but the VE/MAF table guidance is GM-specific.")
+    elif cold:
         action = ("Get the engine fully warmed up (coolant past "
                   f"{int(cfg.ect_min_f)} F) before logging -- cold-enrichment data "
                   "isn't valid for VE/fuel correction.")
@@ -407,9 +417,16 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
     # If the engine ran but every sample was filtered out, explain the blocker
     # rather than giving generic "go drive" advice.
     empty_reason = None
-    if tr.can_correct and summary.n_confident == 0 and result is not None:
-        empty_reason = next((n for n in getattr(result, "notes", [])
-                             if n.startswith("RESULT")), None)
+    if tr.can_correct and summary.n_confident == 0:
+        if result is not None:
+            empty_reason = next((n for n in getattr(result, "notes", [])
+                                 if n.startswith("RESULT")), None)
+        # No manifold-pressure channel -> there's no load axis to bin a RPM x MAP
+        # correction, even though the trims/diagnosis may be perfectly readable
+        # (common on Ford/OBD-II logs that log Absolute Load % instead of MAP).
+        if empty_reason is None and platform != "holley" and "map" not in col:
+            empty_reason = ("RESULT: no manifold-pressure (MAP) channel, so there's "
+                            "no load axis to build the RPM x MAP correction grid.")
     if empty_reason:
         rx = _blocked_prescription(empty_reason, cfg, platform)
     else:

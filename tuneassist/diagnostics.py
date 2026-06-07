@@ -1173,6 +1173,11 @@ def _d_logging_tips(df, col, cfg, dc, warm, platform="gm", stage=None):
                          "Ignition retard / knock (if your ECU + sensor support it) -- "
                          "without it the tool won't recommend timing changes."))
     else:  # GM / HPTuners
+        if "map" not in col:
+            tips.append((0, "DIAL_IDLE_CRUISE",
+                         "Intake MAP (kPa) -- the load axis for the whole RPM x MAP "
+                         "correction. Without manifold pressure there's no grid to "
+                         "build (Ford/OBD-II logs often have only Absolute Load %)."))
         if not has("afr_actual"):
             tips.append((1, "DIAL_IDLE_CRUISE",
                          "Wideband AFR -- the only valid fuel feedback at WOT/open-loop, "
