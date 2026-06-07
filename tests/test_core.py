@@ -220,7 +220,7 @@ def test_platform_make_architecture_axes_in_contract():
     assert 9.5 < stoich_from_ethanol(85) < 10.0     # E85 ~9.85
     d = analyze_log(os.path.join(FIX, "ride42.csv"), _opts()).to_dict()
     assert d["platform"] == "gm" and d["platform_label"] == "HP Tuners"
-    assert d["make"] == "gm" and d["architecture"] == "gm_gen3_4_ls"
+    assert d["make"] == "gm" and d["architecture"] == "gm_gen3_ls"
 
 
 def test_legacy_garage_record_without_make_loads():
@@ -228,9 +228,9 @@ def test_legacy_garage_record_without_make_loads():
     from tuneassist.core import record_to_opts, opts_to_record
     plat, opts = record_to_opts({"platform": "gm", "stoich": 14.7,
                                  "airflow_mode": "maf"})
-    assert plat == "gm" and opts.make == "gm" and opts.architecture == "gm_gen3_4_ls"
+    assert plat == "gm" and opts.make == "gm" and opts.architecture == "gm_gen3_ls"
     rec = opts_to_record(plat, opts)
-    assert rec["make"] == "gm" and rec["architecture"] == "gm_gen3_4_ls"
+    assert rec["make"] == "gm" and rec["architecture"] == "gm_gen3_ls"
 
 
 def test_ethanol_channel_sets_stoich_and_flags_flex_fuel():

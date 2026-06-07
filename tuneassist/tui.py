@@ -290,6 +290,9 @@ class SetupScreen(Screen):
             yield Select([("GM", "gm"), ("Ford", "ford"), ("Mopar", "mopar"),
                           ("Pontiac", "pontiac"), ("Other", "other")],
                          value="gm", allow_blank=False, id="make")
+            yield Label("Generation / architecture")
+            yield Select([(lbl, key) for key, lbl in core.ARCHITECTURES.items()],
+                         value="gm_gen3_ls", allow_blank=False, id="architecture")
             yield Label("Fuel")
             yield Select([(lbl, i) for i, (lbl, _s) in enumerate(FUELS)],
                          value=0, allow_blank=False, id="fuel")
@@ -400,7 +403,8 @@ class SetupScreen(Screen):
             cfg=cfg, airflow_mode=AIRFLOWS[self.query_one("#airflow", Select).value][1],
             tune_spark=self.query_one("#spark", Switch).value,
             find_power=self.query_one("#findpower", Switch).value,
-            make=self.query_one("#make", Select).value)
+            make=self.query_one("#make", Select).value,
+            architecture=self.query_one("#architecture", Select).value)
         opts.profile = self._build_profile(self._checked_mods())
         self._build_cam(opts)
         self.app.load_vehicle(name, nick, platform, opts, [])

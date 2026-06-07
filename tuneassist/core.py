@@ -131,11 +131,24 @@ def platform_label(platform: str) -> str:
     return _PLATFORM_LABELS.get(platform, "HP Tuners")
 
 
+# Engine architectures (where the airflow/spark strategy lives). See
+# docs/TUNING_BY_PLATFORM.md for how each is tuned.
+ARCHITECTURES = {
+    "gm_gen3_ls": "GM Gen 3 LS (VE table + MAF)",
+    "gm_gen4_ls": "GM Gen 4 LS (Virtual VE / MAF-only)",
+    "gm_gen5_lt": "GM Gen 5 LT (direct injection)",
+    "ford_coyote": "Ford Coyote (MAF / load %)",
+    "holley_selflearn": "Holley self-learning",
+    "generic": "Generic / other",
+}
+
+
 def default_make_arch(platform: str) -> tuple[str, str]:
-    """Sensible (make, architecture) when none was chosen/detected."""
+    """Sensible (make, architecture) when none was chosen/detected. Gen 3 LS is
+    the most common swap, so it's the GM default."""
     if platform == "holley":
         return "gm", "holley_selflearn"
-    return "gm", "gm_gen3_4_ls"
+    return "gm", "gm_gen3_ls"
 
 
 def detect_make(df) -> str | None:
@@ -512,7 +525,8 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
     else:
         rx = stages.prescribe(stage, summary, tr.recommendations, platform,
                               airflow_mode=opts.airflow_mode,
-                              cam_points=opts.cam_points, spark=spark)
+                              cam_points=opts.cam_points, spark=spark,
+                              architecture=opts.architecture or "gm_gen3_ls")
 
     return CoreResult(platform=platform, triage=tr, stage=stage, summary=summary,
                       make=opts.make, architecture=opts.architecture,
