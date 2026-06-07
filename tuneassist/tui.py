@@ -80,7 +80,10 @@ def _native_pick_file() -> str | None:
 
 def _setup_summary(platform, opts) -> str:
     amode = {"ve_sd": "VE/SD (MAF off)", "maf": "MAF curve", "no_maf": "no-MAF SD"}
-    bits = [platform.upper(), f"{opts.cfg.stoich:g} stoich",
+    plat = core.platform_label(platform)
+    if getattr(opts, "make", None) and opts.make != "gm":
+        plat += f" - {opts.make.upper()}"
+    bits = [plat, f"{opts.cfg.stoich:g} stoich",
             amode.get(opts.airflow_mode, opts.airflow_mode)]
     if opts.tune_spark:
         bits.append("spark" + ("+power" if opts.find_power else ""))
@@ -280,9 +283,13 @@ class SetupScreen(Screen):
             if not self.ephemeral:
                 yield Label("Name"); yield Input(placeholder="e.g. 5.3 iron truck", id="name")
                 yield Label("Nickname (optional)"); yield Input(placeholder="e.g. Goldie", id="nick")
-            yield Label("Platform")
-            yield Select([("GM / HPTuners", "gm"), ("Holley EFI", "holley")],
+            yield Label("Platform (tuning software)")
+            yield Select([("HP Tuners", "gm"), ("Holley EFI", "holley")],
                          value="gm", allow_blank=False, id="platform")
+            yield Label("Make (engine)")
+            yield Select([("GM", "gm"), ("Ford", "ford"), ("Mopar", "mopar"),
+                          ("Pontiac", "pontiac"), ("Other", "other")],
+                         value="gm", allow_blank=False, id="make")
             yield Label("Fuel")
             yield Select([(lbl, i) for i, (lbl, _s) in enumerate(FUELS)],
                          value=0, allow_blank=False, id="fuel")
@@ -392,7 +399,8 @@ class SetupScreen(Screen):
         opts = core.SessionOpts(
             cfg=cfg, airflow_mode=AIRFLOWS[self.query_one("#airflow", Select).value][1],
             tune_spark=self.query_one("#spark", Switch).value,
-            find_power=self.query_one("#findpower", Switch).value)
+            find_power=self.query_one("#findpower", Switch).value,
+            make=self.query_one("#make", Select).value)
         opts.profile = self._build_profile(self._checked_mods())
         self._build_cam(opts)
         self.app.load_vehicle(name, nick, platform, opts, [])

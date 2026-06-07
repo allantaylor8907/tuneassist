@@ -115,10 +115,12 @@ def build_journey_bar(current_stage: str):
                  title_align="left", subtitle_align="left")
 
 
-def build_triage(tr, platform: str):
+def build_triage(tr, platform: str, make: str | None = None):
+    from .core import platform_label
     color = TRIAGE_COLOR.get(tr.state, "white")
     head = Text()
-    head.append(f"{platform.upper()}", style="bold grey70")
+    label = platform_label(platform) + (f" - {make.upper()}" if make else "")
+    head.append(label, style="bold grey70")
     head.append("   state: ")
     head.append(tr.state, style=f"bold {color}")
     head.append("   " + ("OK to correct" if tr.can_correct else "GATED"),
@@ -354,7 +356,7 @@ def build_diagnostics(findings):
 def build_report(cr, history=None, show_spark=False):
     """Assemble a full result view (Group) from a core.CoreResult. Shared by the
     Textual UI; mirrors the wizard's section order."""
-    parts = [build_triage(cr.triage, cr.platform)]
+    parts = [build_triage(cr.triage, cr.platform, getattr(cr, "make", None))]
     diag = build_diagnostics(getattr(cr, "findings", None))
     if diag is not None:
         parts.append(diag)

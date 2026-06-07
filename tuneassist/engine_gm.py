@@ -103,6 +103,7 @@ CHANNEL_PATTERNS = {
                     r"commanded.*idle"],
     "ase":         [r"after.?start", r"start.*enrich"],
     "warmup_enr":  [r"warm.?up.*enrich", r"coolant.*enrich"],
+    "ethanol":     [r"ethanol", r"flex.*fuel", r"fuel.*alcohol"],
 }
 
 

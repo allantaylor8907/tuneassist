@@ -229,18 +229,22 @@ def _ask_engine_cam(io: WizardIO, opts: SessionOpts) -> None:
 
 
 def _ask_platform(io: WizardIO, path: str) -> str:
+    from .core import platform_label
     platform = detect_platform(path)
-    ovr = io.ask(f"\nDetected platform [bold]{platform.upper()}[/]. "
-                 "Enter to accept, or type gm/holley", default=platform,
-                 choices=["gm", "holley", platform])
+    ovr = io.ask(f"\nDetected platform [bold]{platform_label(platform)}[/]. "
+                 "Enter to accept, or type hptuners/holley", default=platform,
+                 choices=["gm", "hptuners", "holley", platform])
     platform = (ovr or platform).lower()
+    if platform == "hptuners":
+        platform = "gm"        # legacy internal value for the HP Tuners platform
     return platform if platform in ("gm", "holley") else detect_platform(path)
 
 
 def _setup_summary(platform: str, opts: SessionOpts) -> str:
     """One-line recap of the remembered session setup."""
+    from .core import platform_label
     amode = {"ve_sd": "VE/SD (MAF off)", "maf": "MAF curve", "no_maf": "no-MAF SD"}
-    bits = [platform.upper(),
+    bits = [platform_label(platform),
             f"{opts.cfg.stoich:g} stoich",
             amode.get(opts.airflow_mode, opts.airflow_mode)]
     if opts.tune_spark:

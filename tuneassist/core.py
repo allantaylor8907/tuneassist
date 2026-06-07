@@ -38,6 +38,10 @@ class SessionOpts:
     cam_points: object = None       # cams.CamStartingPoints
     cam_spec: object = None         # raw cams.CamSpec (round-trips to disk)
     profile: object = None          # profile.EngineProfile
+    # Engine OEM + architecture axes (see docs/PLATFORMS.md). Independent of the
+    # `platform` (tuning software). Auto-derived/detected when left as None.
+    make: str | None = None         # 'gm' | 'ford' | 'mopar' ...
+    architecture: str | None = None  # 'gm_gen3_4_ls' | 'ford_coyote' ...
 
 
 def opts_to_record(platform: str, opts: "SessionOpts") -> dict:
@@ -46,6 +50,8 @@ def opts_to_record(platform: str, opts: "SessionOpts") -> dict:
     prof = opts.profile
     return {
         "platform": platform,
+        "make": opts.make,
+        "architecture": opts.architecture,
         "stoich": opts.cfg.stoich,
         "airflow_mode": opts.airflow_mode,
         "tune_spark": opts.tune_spark,
@@ -67,9 +73,13 @@ def record_to_opts(record: dict):
     from .profile import EngineProfile
     cfg = Config()
     cfg.stoich = record.get("stoich", 14.7)
+    plat = record.get("platform", "gm")
+    d_make, d_arch = default_make_arch(plat)
     opts = SessionOpts(cfg=cfg, airflow_mode=record.get("airflow_mode", "ve_sd"),
                        tune_spark=record.get("tune_spark", False),
-                       find_power=record.get("find_power", False))
+                       find_power=record.get("find_power", False),
+                       make=record.get("make") or d_make,
+                       architecture=record.get("architecture") or d_arch)
     cam = record.get("cam")
     if cam:
         opts.cam_spec = cams.CamSpec(**cam)
@@ -106,6 +116,42 @@ def detect_platform(path: str) -> str:
     if "target afr" in head or "cl comp" in head:
         return "holley"
     return "gm"
+
+
+# --- platform / make / architecture model (docs/PLATFORMS.md) -----------------
+# NOTE: the internal `platform` value stays "gm"/"holley" for back-compat with
+# the JSON contract and on-disk garages; "gm" is the HP Tuners platform legacy
+# value. The display label and the make/architecture axes are the new model.
+_PLATFORM_LABELS = {"holley": "Holley EFI", "hptuners": "HP Tuners", "gm": "HP Tuners"}
+
+
+def platform_label(platform: str) -> str:
+    """Human name for the tuning platform (software/ECU). 'gm' is the legacy value
+    for HP Tuners."""
+    return _PLATFORM_LABELS.get(platform, "HP Tuners")
+
+
+def default_make_arch(platform: str) -> tuple[str, str]:
+    """Sensible (make, architecture) when none was chosen/detected."""
+    if platform == "holley":
+        return "gm", "holley_selflearn"
+    return "gm", "gm_gen3_4_ls"
+
+
+def detect_make(df) -> str | None:
+    """Best-effort engine make from the channel set. Ford/OBD-II logs carry
+    'WB EQ Ratio'/'Absolute Load'/'Ethanol Fuel %'; default GM otherwise."""
+    cols = " ".join(str(c).lower() for c in df.columns)
+    if "wb eq ratio" in cols or "absolute load" in cols or "coyote" in cols:
+        return "ford"
+    return "gm"
+
+
+def stoich_from_ethanol(pct: float) -> float:
+    """Stoichiometric AFR for a given ethanol content %. Linear from E0 (14.64)
+    to E100 (~9.0): E10~14.1, E85~9.85."""
+    pct = max(0.0, min(100.0, float(pct)))
+    return round(14.64 - (pct / 100.0) * (14.64 - 9.0), 2)
 
 
 def resolve_for(df: pd.DataFrame, platform: str) -> dict:
@@ -307,6 +353,8 @@ class CoreResult:
     triage: object                         # TriageResult
     stage: str
     summary: object                        # stages.AnalysisSummary
+    make: str = "gm"                       # engine OEM (docs/PLATFORMS.md)
+    architecture: str = "gm_gen3_4_ls"     # airflow/spark family
     result: object = None                  # engine_gm.Result | _HolleyResult | None
     spark: object = None                   # spark.SparkResult | None
     maf: tuple = (None, None, [])          # (Series|None, Series|None, notes)
@@ -335,6 +383,29 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
     platform = platform or detect_platform(path)
     df, col = ingest(path, platform, cfg)
 
+    # Make / architecture axes: respect what the user set, else detect/default.
+    if opts.make is None:
+        opts.make = detect_make(df)
+    if opts.architecture is None:
+        if opts.make == "ford":
+            opts.architecture = "ford_coyote"
+        else:
+            _, opts.architecture = default_make_arch(platform)
+
+    # Ethanol auto-detect: if the log carries an ethanol-content channel and it
+    # disagrees with the configured stoich, trust the measurement (flex fuel).
+    eth_note = None
+    if "ethanol" in col:
+        e = pd.to_numeric(df[col["ethanol"]], errors="coerce").dropna()
+        e = e[(e >= 0) & (e <= 100)]
+        if len(e) > 20:
+            pct = float(e.median())
+            new_stoich = stoich_from_ethanol(pct)
+            if abs(new_stoich - cfg.stoich) > 0.4:
+                eth_note = (f"Ethanol ~{pct:.0f}% detected -> using stoich "
+                            f"{new_stoich} (was {cfg.stoich}). Flex fuel.")
+                cfg.stoich = new_stoich
+
     tcol = {k: col[k] for k in ("rpm", "time", "tps", "map") if k in col}
     if "ect" in col:                       # let triage tell "warm but no RPM signal"
         tcol["ect"] = col["ect"]
@@ -347,6 +418,8 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
     spark = None
     maf = (None, None, [])
     notes: list = []
+    if eth_note:
+        notes.append(eth_note)
     if tr.can_correct:
         if out_dir:
             os.makedirs(out_dir, exist_ok=True)
@@ -414,6 +487,13 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
         # Point each finding at the EXACT vendor table to edit.
         _name_tables(findings, platform)
 
+    if eth_note:
+        findings.append(diagnostics.Finding(
+            "FUEL_ETHANOL", "info", "Flex fuel (ethanol) detected", eth_note,
+            ["the log's ethanol-content channel set the stoichiometric AFR"],
+            ["No action -- targets/cross-checks now use the ethanol-corrected stoich. "
+             "Make sure your tune's fuel/stoich matches if you change blends."], "high"))
+
     # If the engine ran but every sample was filtered out, explain the blocker
     # rather than giving generic "go drive" advice.
     empty_reason = None
@@ -435,6 +515,7 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
                               cam_points=opts.cam_points, spark=spark)
 
     return CoreResult(platform=platform, triage=tr, stage=stage, summary=summary,
+                      make=opts.make, architecture=opts.architecture,
                       result=result, spark=spark, maf=maf, prescription=rx,
                       empty_reason=empty_reason, findings=findings, notes=notes)
 
@@ -475,6 +556,9 @@ def result_to_dict(cr: CoreResult) -> dict:
     s = cr.summary
     d = {
         "platform": cr.platform,
+        "platform_label": platform_label(cr.platform),
+        "make": cr.make,
+        "architecture": cr.architecture,
         "triage": {"state": tr.state, "can_correct": tr.can_correct,
                    "detail": tr.detail, "recommendations": list(tr.recommendations)},
         "stage": cr.stage,
