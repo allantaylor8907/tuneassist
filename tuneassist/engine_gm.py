@@ -63,8 +63,10 @@ CHANNEL_PATTERNS = {
     "map":         [r"intake.*manifold.*abs", r"manifold.*abs(?!.*sensor)",
                     r"\bmap\b", r"manifold.*pressure(?!.*sensor)", r"manifold.*abs"],
     "airmass":     [r"cyl.*air", r"air.*cyl", r"air ?mass", r"\bapc\b", r"charge"],
-    "afr_actual":  [r"wide ?band", r"\bwo2\b", r"\buego\b", r"\baem\b", r"lc-?1",
-                    r"afr.*(act|avg|wide)", r"\bafr\b"],
+    # Prefer an explicit "...AFR" wideband over a bare "AEM"/"EQ" equivalence-ratio
+    # channel (a custom AEM install logs both "AEM EQ -> ..." and "AEM - AFR").
+    "afr_actual":  [r"wide ?band", r"aem.*afr", r"\bwo2\b", r"\buego\b", r"\baem\b",
+                    r"lc-?1", r"afr.*(act|avg|wide)", r"\bafr\b"],
     "afr_cmd":     [r"air.?fuel.*ratio.*comm", r"afr.*comm", r"comm.*afr",
                     r"desired.*afr", r"target.*afr"],
     "eq_cmd":      [r"equiv.*ratio.*comm", r"eq.*ratio.*comm", r"comm.*eq", r"lambda.*comm"],
@@ -560,11 +562,40 @@ def load_log(path: str):
         skip = next((i for i, l in enumerate(lines) if l.count(",") >= 3), 0)
         return pd.read_csv(path, skiprows=skip, engine="python", on_bad_lines="skip"), {}
 
-    names = lines[ci + 2].split(",")          # ci+1 = PID ids, ci+2 = names, ci+3 = units
-    units = dict(zip(names, lines[ci + 3].split(",")))
-    df = pd.read_csv(path, skiprows=cd + 1, names=names, encoding="latin-1",
-                     engine="python", on_bad_lines="skip")
+    # ci+1 = PID ids, ci+2 = names, ci+3 = units. The id/unit/data rows are the
+    # source of truth for COLUMN COUNT (ids never contain commas); the names row
+    # can over-split when a channel's name has unquoted commas -- e.g. a custom
+    # AEM wideband auto-named "AEM EQ -> AEM 30-(0300,2340,5130)". That used to
+    # silently shift/drop trailing columns (the wideband), so repair it.
+    def _strip_trailing_empty(parts):
+        while parts and parts[-1] == "":
+            parts.pop()
+        return parts
+
+    ids = _strip_trailing_empty(lines[ci + 1].split(","))
+    n = len(ids)
+    raw_names = _strip_trailing_empty(lines[ci + 2].split(","))
+    raw_units = lines[ci + 3].split(",")
+    names = raw_names if len(raw_names) == n else _repair_channel_names(raw_names, n)
+    units = dict(zip(names, raw_units))
+    df = pd.read_csv(path, skiprows=cd + 1, names=names, usecols=range(n),
+                     encoding="latin-1", engine="python", on_bad_lines="skip")
     return df, units
+
+
+def _repair_channel_names(raw: list, n: int) -> list:
+    """Rebuild exactly `n` channel names when the names row over-split because a
+    name contained unquoted commas. The over-split run is collapsed back into one
+    name; HP Tuners auto-names these custom channels with a '->' so we anchor on
+    that, falling back to 'the run sits just before the last (clean) name'."""
+    extra = len(raw) - n
+    if extra <= 0:
+        return (raw + [""] * (-extra))[:n]
+    start = next((i for i, f in enumerate(raw) if "->" in f), None)
+    if start is None or start + extra >= len(raw):
+        start = max(len(raw) - 1 - extra - 1, 0)   # assume run is 2nd-from-last
+    merged = ",".join(raw[start:start + extra + 1])
+    return raw[:start] + [merged] + raw[start + extra + 1:]
 
 
 def normalize_map_to_kpa(df, col, units, notes):

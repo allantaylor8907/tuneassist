@@ -69,6 +69,18 @@ def triage(df: pd.DataFrame, col: dict, th: TriageThresholds | None = None) -> T
     th = th or TriageThresholds()
 
     if "rpm" not in col or len(df) < th.min_samples:
+        if "rpm" not in col and len(df) >= th.min_samples:
+            # Plenty of data -- it just has no RPM channel. Everything the ECU does
+            # (fuel, spark) is scheduled by RPM, so nothing can be read without it.
+            return TriageResult("NO_DATA", False,
+                "This log has data but no Engine RPM channel -- fuel and spark are "
+                "scheduled by RPM, so nothing can be analyzed without it.",
+                ["Add 'Engine RPM (SAE)' to your scanner's channel list and re-log.",
+                 "For a no-start specifically, also log: cam/crank SYNC status, "
+                 "injector pulse width, spark/ignition, fuel pressure, and a wideband "
+                 "-- that combination is what tells you WHY it won't catch.",
+                 "Tip: also log Intake MAP in kPa (not just the sensor voltage) so the "
+                 "fuel/VE math has a real load axis."])
         return TriageResult("NO_DATA", False,
                             "No RPM channel or too few samples to assess.",
                             ["Log RPM (and ideally sync status) and capture at least "

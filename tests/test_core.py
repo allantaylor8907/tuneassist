@@ -188,6 +188,45 @@ def test_holley_finding_names_base_fuel_table():
     assert any("Base Fuel table" in c for c in af.corrections)
 
 
+def test_hptuners_comma_in_channel_name_is_repaired():
+    # a custom AEM wideband auto-named with commas used to over-split the header
+    # and silently drop/misalign the wideband. The id row (no commas) is truth.
+    import tempfile
+    from tuneassist.engine_gm import load_log, resolve_columns
+    body = (
+        "HP Tuners CSV Log File\nVersion: 1.0\n\n"
+        "[Channel Information]\n"
+        "0,12,11,2340,5130\n"
+        "Offset,Engine RPM (SAE),Intake Manifold Absolute Pressure (SAE),"
+        "AEM EQ -> AEM 30-(0300,2340,5130),AEM - AFR\n"
+        "s,rpm,kPa,lambda,\n"
+        "[Channel Data]\n"
+        "0.00,800,35,0.99,14.2\n0.05,820,36,0.98,14.1\n0.10,810,35,0.99,14.3\n")
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "comma.csv")
+        open(p, "w", encoding="utf-8").write(body)
+        df, _ = load_log(p)
+        assert df.shape[1] == 5                       # aligned to the id row, not 7
+        col = resolve_columns(df)
+        assert col.get("rpm") == "Engine RPM (SAE)"
+        assert col.get("afr_actual") == "AEM - AFR"   # the AFR, not the EQ channel
+        import pandas as pd
+        assert abs(float(pd.to_numeric(df["AEM - AFR"]).iloc[0]) - 14.2) < 0.01
+
+
+def test_no_rpm_channel_with_data_points_at_rpm():
+    # a log with rows but no RPM channel -> tell the user to add Engine RPM
+    import numpy as np, pandas as pd
+    from tuneassist.triage import triage
+    n = 200
+    df = pd.DataFrame({"Time": np.arange(n) * 0.05,
+                       "Injector Pulse Width Avg. Bank 1": np.full(n, 4.0)})
+    r = triage(df, {"time": "Time"})
+    assert r.state == "NO_DATA" and r.can_correct is False
+    blob = (r.detail + " " + " ".join(r.recommendations)).lower()
+    assert "engine rpm" in blob
+
+
 def test_cold_log_reports_blocker_not_grid():
     d = analyze_log(os.path.join(FIX, "jr42.csv"), _opts()).to_dict()
     assert d.get("empty_reason") and "operating temp" in d["empty_reason"]
