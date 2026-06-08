@@ -59,6 +59,8 @@ class DiagnosticConfig:
     startup_overshoot_rpm: float = 600.0  # or absolute overshoot RPM above this
     startup_settle_s: float = 6.0         # time to settle to idle above this = slow
     startup_osc_std: float = 200.0        # RPM std during the flare above this = unstable
+    startup_sag_rpm: float = 300.0        # post-catch dip this far below idle = sag toward stall
+    rolling_hang_rpm: float = 250.0       # RPM above idle baseline while moving+closed = idle hang
     # --- idle quality ---
     idle_hunt_std: float = 90.0     # trimmed idle-RPM std above this = hunting/surging
     idle_rpm_tol: float = 150.0     # actual vs target idle RPM gap that matters
@@ -828,30 +830,50 @@ def _startup_findings(df, col, cfg, dc, platform="gm"):
     within = seg & (t >= t0 + 1) & (rpm <= settled + 150)
     settle_time = float(t[within].min() - t0) if within.any() else 25.0
 
+    sa = table(platform, "startup_air")
+    out = []
+
     flared = pct > dc.startup_overshoot_pct or overshoot > dc.startup_overshoot_rpm
     slow = settle_time > dc.startup_settle_s
     unstable = osc > dc.startup_osc_std
-    if not (flared or slow or unstable):
-        return []
+    if flared or slow or unstable:
+        corr = []
+        if flared:
+            corr.append(f"Reduce cranking/startup airflow in the initial flare window "
+                        f"(~10-15%) so the flare lands nearer idle -- the {sa}.")
+        if slow:
+            corr.append(f"Speed up the startup-airflow decay so RPM returns to target "
+                        f"within ~3s -- the {sa}.")
+        if unstable and not flared:
+            corr.append(f"Smooth the startup airflow/decay; the early RPM is bouncing -- the {sa}.")
+        corr.append("Re-log from key-on and confirm the flare settles cleanly to idle.")
+        sev = "warning" if (pct > 70 or settle_time > 8 or unstable) else "info"
+        out.append(Finding(
+            "STARTUP_FLARE", sev, "Startup idle flares / settles slowly",
+            f"On start, RPM flares to ~{peak:.0f} then settles to ~{settled:.0f} "
+            f"({pct:.0f}% overshoot) in ~{settle_time:.1f}s.",
+            ["cranking/startup airflow set high", "startup airflow decay too slow"],
+            corr, "high"))
 
-    sa = table(platform, "startup_air")
-    corr = []
-    if flared:
-        corr.append(f"Reduce cranking/startup airflow in the initial flare window "
-                    f"(~10-15%) so the flare lands nearer idle -- the {sa}.")
-    if slow:
-        corr.append(f"Speed up the startup-airflow decay so RPM returns to target "
-                    f"within ~3s -- the {sa}.")
-    if unstable and not flared:
-        corr.append(f"Smooth the startup airflow/decay; the early RPM is bouncing -- the {sa}.")
-    corr.append("Re-log from key-on and confirm the flare settles cleanly to idle.")
-    sev = "warning" if (pct > 70 or settle_time > 8 or unstable) else "info"
-    return [Finding(
-        "STARTUP_FLARE", sev, "Startup idle flares / settles slowly",
-        f"On start, RPM flares to ~{peak:.0f} then settles to ~{settled:.0f} "
-        f"({pct:.0f}% overshoot) in ~{settle_time:.1f}s.",
-        ["cranking/startup airflow set high", "startup airflow decay too slow"],
-        corr, "high")]
+    # The opposite failure: it catches, then SAGS toward stall before recovering --
+    # too LITTLE startup airflow (or base running airflow too low). Look for a dip
+    # well below the eventual idle in the first few seconds after the catch.
+    dip_win = seg & (t >= t0 + 0.5) & (t < t0 + 6)
+    if int(dip_win.sum()) > 8:
+        dip_min = float(rpm[dip_win].min())
+        if dip_min < settled - dc.startup_sag_rpm and dip_min < 600:
+            out.append(Finding(
+                "STARTUP_SAG", "warning", "Engine sags toward stall after startup",
+                f"On start, RPM catches then dips to ~{dip_min:.0f} (well below the "
+                f"~{settled:.0f} idle) before recovering -- the classic 'needs a throttle "
+                "blip to stay alive' symptom.",
+                ["startup airflow too LOW (or base running airflow too low)",
+                 "afterstart enrichment too low can also cause a lean sag"],
+                [f"Raise startup airflow so the catch holds without sagging -- the {sa}. "
+                 "If the base idle is also lean/low, fix base running airflow first.",
+                 "Re-log from key-on; the engine should catch and hold idle with no throttle."],
+                "high"))
+    return out
 
 
 def _trans_findings(df, col, cfg, dc, platform="gm"):
@@ -1254,10 +1276,51 @@ def _d_logging_tips(df, col, cfg, dc, warm, platform="gm", stage=None):
                    picks, "low")
 
 
+def _d_rolling_idle_hang(df, col, cfg, dc, warm):
+    """Throttle-cracker / follower set too high: while the vehicle is still moving
+    with the throttle closed, RPM hangs well above the idle target instead of
+    coming down (the 'rolling idle hangs / pushes through the brakes' symptom).
+    Needs RPM + TPS + vehicle speed."""
+    rpm = _num(df, col, "rpm")
+    tps = _num(df, col, "tps")
+    spd = _num(df, col, "speed")
+    if rpm is None or tps is None or spd is None:
+        return None
+    # idle baseline: warm, stopped, closed throttle.
+    base_m = warm & (spd < 3) & (tps < 3) & (rpm > 500) & (rpm < 1100)
+    bv = rpm[base_m].dropna()
+    if len(bv) < 30:
+        return None
+    baseline = float(bv.median())
+    # rolling closed-throttle samples (moving, off the throttle, not decel-low).
+    roll = warm & (spd > 5) & (tps < 3) & (rpm > 500)
+    rv = rpm[roll].dropna()
+    if len(rv) < 40:
+        return None
+    hang = rv[rv > baseline + dc.rolling_hang_rpm]
+    frac = len(hang) / len(rv)
+    if frac < 0.25:
+        return None
+    hi = float(hang.median())
+    return Finding("ROLLING_IDLE_HANG", "info",
+                   "Idle hangs high while rolling to a stop",
+                   f"With the throttle closed and the car still moving, RPM hangs around "
+                   f"~{hi:.0f} vs the ~{baseline:.0f} idle ({frac*100:.0f}% of coastdown "
+                   "samples) -- it doesn't settle until the car stops.",
+                   ["throttle cracker adding too much airflow on coastdown",
+                    "throttle follower decaying too slowly after throttle-lift"],
+                   ["Reduce the throttle cracker (rolling/coastdown idle airflow) so RPM "
+                    "comes down as you slow -- tune it only after steady hot idle is right.",
+                    "If RPM hangs right after a throttle lift then slowly returns, ease the "
+                    "throttle-follower decay instead.",
+                    "Don't fix this with base idle airflow -- that's a different table."],
+                   "high")
+
+
 _DETECTORS = [_d_cruise_trim, _d_bank_imbalance, _d_wb_vs_commanded,
               _d_wot_fueling, _d_injector_duty, _d_trim_clipping, _d_low_voltage,
               _d_low_fuel_pressure, _d_knock, _d_timing_vs_command, _d_temps,
-              _d_trim_oscillation]
+              _d_trim_oscillation, _d_rolling_idle_hang]
 
 
 # Detectors that only make sense on the GM/HPTuners model (the wideband is

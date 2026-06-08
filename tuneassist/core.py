@@ -327,6 +327,7 @@ def _name_tables(findings, platform: str):
         "IDLE_AIRFLOW_OFF": "idle_air",
         "IDLE_TIMING_SWING": "idle_spark", "WARMUP_RICH": "warmup_enr",
         "WARMUP_LEAN": "warmup_enr", "ENRICH_NOT_DECAYED": "ase",
+        "STARTUP_SAG": "startup_air", "ROLLING_IDLE_HANG": "idle_air",
         "WOT_RICH": "pe", "WOT_TARGET_LEAN": "pe", "WOT_TARGET_RISK": "pe",
         "IDLE_RICH": "ve", "IDLE_LEAN": "ve",
     }

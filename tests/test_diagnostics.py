@@ -609,6 +609,41 @@ def test_idle_airflow_small_correction_is_quiet():
     assert "IDLE_AIRFLOW_OFF" not in _ids(_diag(_raf_idle_log(RAFPN=0.5)))
 
 
+def test_startup_sag_detects_catch_then_dip():
+    import numpy as np, pandas as pd
+    crank = np.full(30, 300.0)
+    catch = np.concatenate([np.linspace(650, 720, 5),    # quick catch
+                            np.linspace(700, 470, 15),    # sag toward stall
+                            np.linspace(490, 800, 20)])   # recover
+    rpm = np.concatenate([crank, catch, np.full(500, 800.0)])
+    n = len(rpm)
+    df = pd.DataFrame({"Time": np.arange(n) / 20.0, "Engine RPM": rpm,
+                       "MAP": np.full(n, 45.0), "Throttle Position": np.zeros(n),
+                       "Coolant Temp": np.full(n, 195.0)})
+    ids = _ids(_diag(df))
+    assert "STARTUP_SAG" in ids and "STARTUP_FLARE" not in ids
+
+
+def test_rolling_idle_hang_detects_coastdown_hang():
+    import numpy as np, pandas as pd
+    df = pd.DataFrame({
+        "Engine RPM": np.r_[np.full(100, 800.0), np.full(100, 1150.0)],
+        "Throttle Position": np.zeros(200), "Coolant Temp": np.full(200, 195.0),
+        "Vehicle Speed": np.r_[np.zeros(100), np.full(100, 20.0)],
+        "MAP": np.full(200, 45.0)})
+    assert "ROLLING_IDLE_HANG" in _ids(_diag(df))
+
+
+def test_rolling_idle_hang_quiet_when_idle_returns():
+    import numpy as np, pandas as pd
+    df = pd.DataFrame({
+        "Engine RPM": np.r_[np.full(100, 800.0), np.full(100, 900.0)],  # only +100
+        "Throttle Position": np.zeros(200), "Coolant Temp": np.full(200, 195.0),
+        "Vehicle Speed": np.r_[np.zeros(100), np.full(100, 20.0)],
+        "MAP": np.full(200, 45.0)})
+    assert "ROLLING_IDLE_HANG" not in _ids(_diag(df))
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
