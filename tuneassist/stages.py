@@ -313,8 +313,11 @@ def prescribe(stage: str, summary: AnalysisSummary, triage_recs: list,
                            "MAF curve. Switch airflow to 'VE / MAF off', dial this VE pass "
                            "in first, THEN come back and tune the MAF curve.")
         elif gm and not gen4 and not gen5 and airflow_mode == "ve_sd":
-            actions.append("MAF should be DISABLED for this pass (speed-density only) "
-                           "so these trims are pure VE error.")
+            actions.append("Force the MAF to FAIL for this pass (HP Tuners: set MAF-fail "
+                           "high-frequency to 0 and enable P0101/0102/0103, flash, confirm "
+                           "a MAF DTC) so the PCM runs pure speed-density -- don't just "
+                           "unplug it; some tunes won't fall back. Target the driven cells "
+                           "to ~+/-2-3%.")
         if not gen4 and not gen5:
             if off.get("shape") == "global_offset":
                 actions.append(
@@ -355,13 +358,18 @@ def prescribe(stage: str, summary: AnalysisSummary, triage_recs: list,
                 "grid you already corrected in speed-density. The MAF table is a SINGLE "
                 "ROW indexed by frequency (Hz) -- in HP Tuners it's 'Airflow vs "
                 "Frequency'. This step edits the MAF table, NOT the VE table.",
-                "Re-enable the MAF (undo the SD-only/disable change from the VE pass).",
+                "Re-enable the MAF (undo the SD-only/disable change from the VE pass), "
+                "then make MAF the active model: minimize dynamic airflow (HP Tuners: "
+                "Dynamic Airflow High-RPM Disable ~400 / Re-enable ~300) so it's not "
+                "blending VE in above idle.",
                 "Apply the frequency-indexed correction (Hz -> %) to that MAF 'Airflow "
-                "vs Frequency' row.",
+                "vs Frequency' row, then SMOOTH it monotonic (airflow must rise with Hz).",
                 "You MUST log the MAF Frequency (Hz) channel for this -- without it there's "
                 "no way to build the curve correction. If it's not in the log, add it and "
                 "re-capture.",
                 "MAF is a steady-state sensor: trust steady cruise cells, ignore transients.",
+                "When done: restore MAF-fail / P010x / dynamic-airflow to stock, clear DTCs, "
+                "then log normal driving -- trims shouldn't jump at the VE<->MAF handoff.",
             ],
             drive="Steady cruise sweep that walks airflow up smoothly (gentle, "
                   "progressive part-throttle through the gears). Hold steady speeds.",
