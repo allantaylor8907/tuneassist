@@ -65,6 +65,7 @@ class DiagnosticConfig:
     idle_afr_rich: float = 13.2     # idle AFR richer than this = over-rich idle
     idle_afr_lean: float = 15.3     # idle AFR leaner than this = lean idle
     idle_timing_std: float = 4.0    # idle spark swing (deg) above this = fighting itself
+    idle_airflow_corr_gps: float = 2.0  # |RAFIG/RAFPN| g/sec above this = base airflow off
 
 
 @dataclass
@@ -1145,6 +1146,32 @@ def _idle_findings(df, col, cfg, dc, warm, cam_class=None):
                 f"Idle spark advance varies a lot (std {float(sv.std()):.1f} deg) - the "
                 "idle spark-vs-RPM correction may be amplifying the hunt.",
                 ["idle spark correction (rpm error -> timing) too strong"], fix, "low"))
+
+    # Base running airflow off: the PCM's idle-airflow correction (RAFIG in gear /
+    # RAFPN in park-neutral, g/sec) is large, so the Base Running Airflow table is
+    # wrong at this ECT -- add/subtract that correction into the base table.
+    for key, where in (("rafpn", "park/neutral"), ("rafig", "in-gear")):
+        raf = _num(df, col, key)
+        if raf is None:
+            continue
+        rv = raf[idle].dropna()
+        if len(rv) < 30:
+            continue
+        med = float(rv.median())
+        if abs(med) >= dc.idle_airflow_corr_gps:
+            direction = ("ADDING" if med > 0 else "REMOVING")
+            need = ("too LOW" if med > 0 else "too HIGH")
+            out.append(Finding("IDLE_AIRFLOW_OFF", "warning",
+                f"Base running airflow is off ({where})",
+                f"The PCM is {direction} ~{abs(med):.1f} g/sec of idle airflow "
+                f"({key.upper()}) to hold idle -- the Base Running Airflow table is "
+                f"{need} at this coolant temp.",
+                ["base running airflow table wrong at this ECT",
+                 "(if both park and in-gear are off, suspect a vacuum/throttle leak first)"],
+                [f"Add the {key.upper()} correction into the {where} Base Running Airflow "
+                 f"cell at this ECT (~{abs(med):.1f} g/sec), apply 50-75% on the first pass, "
+                 "smooth neighboring ECT cells, then re-log -- aim for a small correction "
+                 "with authority left for load changes."], "high"))
     return out
 
 
