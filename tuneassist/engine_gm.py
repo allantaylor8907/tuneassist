@@ -578,10 +578,27 @@ def load_log(path: str):
     raw_names = _strip_trailing_empty(lines[ci + 2].split(","))
     raw_units = lines[ci + 3].split(",")
     names = raw_names if len(raw_names) == n else _repair_channel_names(raw_names, n)
+    names = _dedup_names(names)              # logs sometimes repeat a PID column
     units = dict(zip(names, raw_units))
     df = pd.read_csv(path, skiprows=cd + 1, names=names, usecols=range(n),
                      encoding="latin-1", engine="python", on_bad_lines="skip")
     return df, units
+
+
+def _dedup_names(names: list) -> list:
+    """Make column names unique (pandas rejects duplicates). Real logs sometimes
+    log the same PID several times; suffix the repeats so the first keeps its
+    clean name (resolve_columns matches that one)."""
+    seen: dict[str, int] = {}
+    out = []
+    for nm in names:
+        if nm in seen:
+            seen[nm] += 1
+            out.append(f"{nm} ({seen[nm]})")
+        else:
+            seen[nm] = 1
+            out.append(nm)
+    return out
 
 
 def _repair_channel_names(raw: list, n: int) -> list:
