@@ -152,12 +152,33 @@ def default_make_arch(platform: str) -> tuple[str, str]:
 
 
 def detect_make(df) -> str | None:
-    """Best-effort engine make from the channel set. Ford/OBD-II logs carry
-    'WB EQ Ratio'/'Absolute Load'/'Ethanol Fuel %'; default GM otherwise."""
+    """Best-effort engine make from the channel set. Ford/OBD-II logs use the
+    'WB EQ Ratio' wideband; 'Absolute Load' alone is NOT Ford (GM Gen 4 logs it
+    too) -- only treat it as Ford when there's no manifold MAP. Default GM."""
     cols = " ".join(str(c).lower() for c in df.columns)
-    if "wb eq ratio" in cols or "absolute load" in cols or "coyote" in cols:
+    has_map = "manifold absolute pressure" in cols
+    if "wb eq ratio" in cols or "coyote" in cols:
+        return "ford"
+    if "absolute load" in cols and not has_map:
         return "ford"
     return "gm"
+
+
+def detect_architecture(df, make: str, platform: str) -> str:
+    """Best-effort engine family from the channel fingerprints:
+    DI high-pressure rail -> Gen 5 LT; VVT cam-phaser channels -> Gen 4 LS;
+    otherwise Gen 3 LS. Non-GM/Holley short-circuit."""
+    if platform == "holley":
+        return "holley_selflearn"
+    if make == "ford":
+        return "ford_coyote"
+    cols = " ".join(str(c).lower() for c in df.columns)
+    if any(k in cols for k in ("rail pressure", "hpfp", "high pressure fuel", "direct inj")):
+        return "gm_gen5_lt"
+    if any(k in cols for k in ("cam angle", "cam error", "cam phaser", "intake cam",
+                               "exhaust cam", "vvt")):
+        return "gm_gen4_ls"
+    return "gm_gen3_ls"
 
 
 def stoich_from_ethanol(pct: float) -> float:
@@ -186,10 +207,11 @@ def ingest(path: str, platform: str, cfg: Config):
     return df, col
 
 
-def _primary_change_finding(summary, platform: str, airflow_mode: str):
+def _primary_change_finding(summary, platform: str, airflow_mode: str,
+                            architecture: str = "gm_gen3_ls"):
     """Turn the main fuel/VE correction into a lead diagnosis item: WHAT to change,
-    WHERE (which table), and HOW (multiply-by-percent). None when nothing material
-    to change (converged or no confident cells)."""
+    WHERE (which table), and HOW (multiply-by-percent). Architecture-aware -- Gen 4
+    has no VE table (it's MAF-only). None when nothing material to change."""
     from .diagnostics import Finding
     worst = getattr(summary, "max_abs_pct", 0.0)
     if getattr(summary, "n_confident", 0) == 0 or worst < 1.5:
@@ -198,15 +220,28 @@ def _primary_change_finding(summary, platform: str, airflow_mode: str):
     n = summary.n_confident
     focus = summary.focus or "the populated cells"
     off = summary.offset or {}
+    gen4 = architecture == "gm_gen4_ls"
+    gen5 = architecture == "gm_gen5_lt"
     if platform == "holley":
         table, what = _tbl("holley", "ve"), "Base fuel"
-    elif airflow_mode == "maf":
+    elif gen4 or airflow_mode == "maf":
         table, what = _tbl("gm", "maf"), "MAF curve"
+    elif gen5:
+        table, what = _tbl("gm", "maf"), "airflow (MAF)"
     else:
         table, what = _tbl("gm", "ve"), "VE table"
     sev = "warning" if worst >= 3 else "info"
     corrections = []
-    if (off.get("shape") == "global_offset" and platform != "holley"
+    if gen4:
+        corrections.append(
+            "GEN 4: there's no editable VE table (it's Virtual VE). Apply this onto the "
+            "MAF 'Airflow vs Frequency' curve (run MAF-only: Dynamic Airflow High-RPM "
+            "Disable = 0) -- do NOT paste it into a VE table.")
+    elif gen5:
+        corrections.append(
+            "GEN 5 (DI): use this as airflow guidance for the VVE/MAF; also mind the DI "
+            "fuel-system ceiling and driver-demand torque limits.")
+    elif (off.get("shape") == "global_offset" and platform != "holley"
             and airflow_mode != "maf"):
         corrections.append(
             f"It's a nearly-FLAT ~{off.get('median_pct')}% offset -- a single scalar "
@@ -214,7 +249,6 @@ def _primary_change_finding(summary, platform: str, airflow_mode: str):
     corrections.append(
         f"Apply the correction grid (shown below) to your {table}: multiply-by-percent "
         "-- a +5 cell means multiply that cell by 1.05.")
-    # (table already reads e.g. 'Main VE table (Engine > Airflow > Volumetric Efficiency)')
     corrections.append("Leave cells marked '-' (too few samples); re-log to confirm they shrink.")
     return Finding("APPLY_FUEL", sev, f"{what} needs correction (apply the grid below)",
                    f"The correction grid has changes up to {worst:.0f}% across {n} cells "
@@ -400,10 +434,7 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
     if opts.make is None:
         opts.make = detect_make(df)
     if opts.architecture is None:
-        if opts.make == "ford":
-            opts.architecture = "ford_coyote"
-        else:
-            _, opts.architecture = default_make_arch(platform)
+        opts.architecture = detect_architecture(df, opts.make, platform)
 
     # Ethanol auto-detect: if the log carries an ethanol-content channel and it
     # disagrees with the configured stoich, trust the measurement (flex fuel).
@@ -484,7 +515,8 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
         # The main fuel/VE correction is itself a change to apply -- make it the
         # lead diagnosis item so users see "what to change" up top, not just the
         # peripheral issues.
-        primary = _primary_change_finding(summary, platform, opts.airflow_mode)
+        primary = _primary_change_finding(summary, platform, opts.airflow_mode,
+                                          opts.architecture or "gm_gen3_ls")
         if primary is not None:
             rank = diagnostics.SEVERITY_RANK
             cr_ = {"high": 0, "medium": 1, "low": 2}

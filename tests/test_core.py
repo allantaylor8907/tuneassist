@@ -255,6 +255,51 @@ def test_ethanol_channel_sets_stoich_and_flags_flex_fuel():
     assert cr.summary is not None  # ran with the E85 stoich, no crash
 
 
+def test_duplicate_channel_names_are_deduped():
+    # real logs sometimes log the same PID several times -> pandas rejects dup
+    # names; the loader must suffix repeats instead of crashing.
+    import tempfile
+    from tuneassist.engine_gm import load_log
+    body = ("HP Tuners CSV Log File\nVersion: 1.0\n\n[Channel Information]\n"
+            "0,12,11,2120,2120\n"
+            "Offset,Engine RPM,Intake Manifold Absolute Pressure (SAE),"
+            "Engine Oil Pressure,Engine Oil Pressure\n"
+            "s,rpm,kPa,psi,psi\n[Channel Data]\n"
+            "0.00,800,35,40,40\n0.05,820,36,41,41\n")
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "dup.csv")
+        open(p, "w", encoding="utf-8").write(body)
+        df, _ = load_log(p)
+        assert df.shape[1] == 5
+        assert len(set(df.columns)) == 5            # all unique after dedup
+        assert "Engine RPM" in df.columns
+
+
+def test_gen4_detected_and_prescribes_maf_only():
+    # a VVT cam channel is the Gen-4 fingerprint -> architecture gm_gen4_ls, and
+    # the lead change must target the MAF curve, not a VE table.
+    import numpy as np, pandas as pd, tempfile
+    n = 1500
+    rpm = np.clip(1500 + 1400 * np.sin(np.arange(n) / 35), 700, 4200)
+    mapk = np.clip(45 + 30 * np.sin(np.arange(n) / 28), 22, 95)
+    df = pd.DataFrame({"Time": np.arange(n) * 0.05, "Engine RPM": rpm,
+                       "Intake Manifold Absolute Pressure (SAE)": mapk,
+                       "Throttle Position": np.clip(mapk - 20, 0, 80),
+                       "Coolant Temp": np.full(n, 195.0), "Absolute Load": mapk,
+                       "Intake Cam Angle": np.full(n, 5.0),   # VVT -> Gen 4
+                       "Commanded AFR": np.full(n, 14.7),
+                       "Short Term Fuel Trim Bank 1": np.full(n, 7.0),
+                       "Long Term Fuel Trim Bank 1": np.zeros(n)})
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "g4.csv")
+        df.to_csv(p, index=False)
+        cr = analyze_log(p, _opts())
+    assert cr.make == "gm" and cr.architecture == "gm_gen4_ls"   # not Ford!
+    af = [f for f in cr.findings if f.id == "APPLY_FUEL"][0]
+    joined = " ".join(af.corrections)
+    assert "MAF" in joined and "Main VE table" not in joined
+
+
 def test_no_map_log_explains_missing_load_axis():
     # Ford/OBD-II style: RPM + trims but no manifold MAP -> can't build the grid,
     # but the trim diagnosis still applies and we say why + name the Ford case.
