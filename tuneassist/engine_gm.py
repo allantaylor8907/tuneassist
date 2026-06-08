@@ -104,6 +104,10 @@ CHANNEL_PATTERNS = {
     "ase":         [r"after.?start", r"start.*enrich"],
     "warmup_enr":  [r"warm.?up.*enrich", r"coolant.*enrich"],
     "ethanol":     [r"ethanol", r"flex.*fuel", r"fuel.*alcohol"],
+    # Idle base-airflow corrections (g/sec): in-gear (RAFIG) / park-neutral (RAFPN).
+    "rafig":       [r"\brafig\b", r"running airflow.*(gear|drive)", r"idle.*airflow.*gear"],
+    "rafpn":       [r"\brafpn\b", r"running airflow.*(park|neutral|pn)",
+                    r"idle.*airflow.*(park|neutral)"],
 }
 
 

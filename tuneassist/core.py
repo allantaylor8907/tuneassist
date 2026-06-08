@@ -324,6 +324,7 @@ def _name_tables(findings, platform: str):
         "KNOCK": "spark", "TIMING_BELOW_COMMAND": "spark", "INJ_DUTY": "injector",
         "HIGH_IAT": "iat_spark",
         "IDLE_HIGH": "idle_air", "IDLE_LOW": "idle_air", "VACUUM_LEAK": "idle_air",
+        "IDLE_AIRFLOW_OFF": "idle_air",
         "IDLE_TIMING_SWING": "idle_spark", "WARMUP_RICH": "warmup_enr",
         "WARMUP_LEAN": "warmup_enr", "ENRICH_NOT_DECAYED": "ase",
         "WOT_RICH": "pe", "WOT_TARGET_LEAN": "pe", "WOT_TARGET_RISK": "pe",

@@ -583,6 +583,32 @@ def test_findings_sorted_critical_first():
     assert findings[0].severity == "critical"
 
 
+def _raf_idle_log(n=300, **extra):
+    import pandas as pd, numpy as np
+    df = pd.DataFrame({"Engine RPM": np.full(n, 800.0), "MAP": np.full(n, 45.0),
+                       "Throttle Position": np.zeros(n), "Coolant Temp": np.full(n, 195.0),
+                       "Vehicle Speed": np.zeros(n)})
+    for k, v in extra.items():
+        df[k] = np.full(n, v)
+    return df
+
+
+def test_idle_airflow_correction_flags_base_airflow_low():
+    # PCM ADDING idle airflow (RAFPN +) -> base running airflow is too LOW
+    f = [x for x in _diag(_raf_idle_log(RAFPN=2.6)) if x.id == "IDLE_AIRFLOW_OFF"][0]
+    assert "park/neutral" in f.title
+    assert "ADDING" in f.detail and "too LOW" in f.detail
+
+
+def test_idle_airflow_correction_in_gear_high():
+    f = [x for x in _diag(_raf_idle_log(RAFIG=-3.0)) if x.id == "IDLE_AIRFLOW_OFF"][0]
+    assert "in-gear" in f.title and "REMOVING" in f.detail and "too HIGH" in f.detail
+
+
+def test_idle_airflow_small_correction_is_quiet():
+    assert "IDLE_AIRFLOW_OFF" not in _ids(_diag(_raf_idle_log(RAFPN=0.5)))
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
