@@ -152,14 +152,17 @@ def default_make_arch(platform: str) -> tuple[str, str]:
 
 
 def detect_make(df) -> str | None:
-    """Best-effort engine make from the channel set. Ford/OBD-II logs use the
-    'WB EQ Ratio' wideband; 'Absolute Load' alone is NOT Ford (GM Gen 4 logs it
-    too) -- only treat it as Ford when there's no manifold MAP. Default GM."""
+    """Best-effort engine make from the channel set. The reliable tell is the
+    manifold-MAP channel: GM speed-density logs carry it; Ford/OBD-II logs don't
+    (they run on Absolute Load %). 'WB EQ Ratio' and 'Absolute Load' appear on
+    BOTH (GM logs them too), so neither can flag Ford on its own. Default GM."""
     cols = " ".join(str(c).lower() for c in df.columns)
-    has_map = "manifold absolute pressure" in cols
-    if "wb eq ratio" in cols or "coyote" in cols:
+    if "manifold absolute pressure" in cols:
+        return "gm"
+    if "coyote" in cols:
         return "ford"
-    if "absolute load" in cols and not has_map:
+    # No manifold MAP + the OBD-II load/lambda signature -> Ford/OBD-II.
+    if "absolute load" in cols or "wb eq ratio" in cols:
         return "ford"
     return "gm"
 
@@ -177,6 +180,12 @@ def detect_architecture(df, make: str, platform: str) -> str:
         return "gm_gen5_lt"
     if any(k in cols for k in ("cam angle", "cam error", "cam phaser", "intake cam",
                                "exhaust cam", "vvt")):
+        return "gm_gen4_ls"
+    # Torque-based ECM (a driver-demand torque request alongside dynamic airflow /
+    # TCC PWM control) is Gen 4 -- Gen 3 P01/P59 is MAP/MAF-based, not torque-based.
+    if (any(k in cols for k in ("dynamic airflow", "tcc pwm")) and
+            any(k in cols for k in ("desired engine torque", "torque mgt",
+                                    "driver demand", "tcs desired"))):
         return "gm_gen4_ls"
     return "gm_gen3_ls"
 

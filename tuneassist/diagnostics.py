@@ -60,7 +60,8 @@ class DiagnosticConfig:
     startup_settle_s: float = 6.0         # time to settle to idle above this = slow
     startup_osc_std: float = 200.0        # RPM std during the flare above this = unstable
     startup_sag_rpm: float = 300.0        # post-catch dip this far below idle = sag toward stall
-    rolling_hang_rpm: float = 250.0       # RPM above idle baseline while moving+closed = idle hang
+    rolling_hang_rpm: float = 250.0       # RPM above idle baseline while rolling-to-stop = hang
+    rolling_hang_max: float = 700.0       # above idle+this = gear/converter coupling, not a hang
     # --- idle quality ---
     idle_hunt_std: float = 90.0     # trimmed idle-RPM std above this = hunting/surging
     idle_rpm_tol: float = 150.0     # actual vs target idle RPM gap that matters
@@ -1292,14 +1293,17 @@ def _d_rolling_idle_hang(df, col, cfg, dc, warm):
     if len(bv) < 30:
         return None
     baseline = float(bv.median())
-    # rolling closed-throttle samples (moving, off the throttle, not decel-low).
-    roll = warm & (spd > 5) & (tps < 3) & (rpm > 500)
+    # ROLLING TO A STOP only (2-8 mph). At higher speed the engine is coupled to
+    # the wheels in gear, so closed-throttle RPM tracks vehicle speed -- that's
+    # engine braking, not an idle hang. Also cap the hang band so a downshift /
+    # converter coupling (RPM way up) doesn't read as a cracker hang.
+    roll = warm & (spd > 2) & (spd <= 8) & (tps < 3) & (rpm > 500)
     rv = rpm[roll].dropna()
     if len(rv) < 40:
         return None
-    hang = rv[rv > baseline + dc.rolling_hang_rpm]
+    hang = rv[(rv > baseline + dc.rolling_hang_rpm) & (rv < baseline + dc.rolling_hang_max)]
     frac = len(hang) / len(rv)
-    if frac < 0.25:
+    if frac < 0.35:
         return None
     hi = float(hang.median())
     return Finding("ROLLING_IDLE_HANG", "info",

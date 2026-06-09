@@ -300,6 +300,26 @@ def test_gen4_detected_and_prescribes_maf_only():
     assert "MAF" in joined and "Main VE table" not in joined
 
 
+def test_torque_based_ecm_detected_as_gen4():
+    # a torque-request channel + dynamic airflow = Gen 4 (Gen 3 isn't torque-based)
+    import numpy as np, pandas as pd, tempfile
+    n = 1200
+    rpm = np.clip(1500 + 1200 * np.sin(np.arange(n) / 30), 700, 4000)
+    mapk = np.clip(45 + 30 * np.sin(np.arange(n) / 25), 22, 95)
+    df = pd.DataFrame({"Time": np.arange(n) * 0.05, "Engine RPM": rpm,
+                       "Intake Manifold Absolute Pressure (SAE)": mapk,
+                       "Throttle Position": np.clip(mapk - 20, 0, 80),
+                       "Coolant Temp": np.full(n, 195.0), "Dynamic Airflow": mapk,
+                       "TCS Desired Engine Torque": np.full(n, 200.0),
+                       "Short Term Fuel Trim Bank 1": np.full(n, 4.0),
+                       "Long Term Fuel Trim Bank 1": np.zeros(n)})
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "tq.csv")
+        df.to_csv(p, index=False)
+        cr = analyze_log(p, _opts())
+    assert cr.make == "gm" and cr.architecture == "gm_gen4_ls"
+
+
 def test_no_map_log_explains_missing_load_axis():
     # Ford/OBD-II style: RPM + trims but no manifold MAP -> can't build the grid,
     # but the trim diagnosis still applies and we say why + name the Ford case.
