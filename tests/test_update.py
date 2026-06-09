@@ -34,15 +34,16 @@ def test_pick_asset_matches_this_os(monkeypatch=None):
         assert url == expect
 
 
-def test_update_bat_handles_paths_with_spaces_and_parens():
+def test_update_ps_script_handles_paths_with_spaces_and_parens():
     # the failing real-world case: 'tuneassist-windows-x64 (2).exe'
     exe = r"C:\Users\Allan\Downloads\tuneassist-windows-x64 (2).exe"
     new = exe + ".new"
-    s = update._update_bat_script(exe, new)
-    assert f'move /y "{new}" "{exe}"' in s          # both paths quoted
-    assert f'start "" "{exe}"' in s                  # relaunch quoted
-    assert ":loop" in s and "goto loop" in s         # retries until unlocked
-    assert s.endswith('del "%~f0"\r\n')              # self-deletes
+    s = update._update_ps_script(exe, new, pid=4321)
+    assert "Wait-Process -Id 4321" in s              # waits on the real process
+    # LiteralPath single-quoted (parens/spaces safe), moving .new ONTO the .exe
+    assert f"-LiteralPath '{new}' -Destination '{exe}' -Force" in s
+    assert f"Start-Process -FilePath '{exe}'" in s   # relaunch after swap
+    assert "Remove-Item -LiteralPath $MyInvocation.MyCommand.Path" in s  # self-deletes
 
 
 def test_self_update_refuses_when_not_frozen():
