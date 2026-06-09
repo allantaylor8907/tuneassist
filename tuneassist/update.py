@@ -170,15 +170,18 @@ def passive_check(force: bool = False) -> UpdateInfo | None:
 # self-update (frozen binary only)
 # --------------------------------------------------------------------------
 def cleanup_old_binary() -> None:
-    """Remove the '.old' file left behind by a Windows in-place update."""
+    """Remove leftovers from a Windows in-place update: the renamed '.old' binary
+    and a '.new' download that didn't get swapped in (e.g. a previous failed/
+    interrupted update). Keeps the user's folder clean and self-heals."""
     if not is_frozen():
         return
-    old = sys.executable + ".old"
-    if os.path.exists(old):
-        try:
-            os.remove(old)
-        except Exception:
-            pass
+    for suffix in (".old", ".new"):
+        p = sys.executable + suffix
+        if os.path.exists(p):
+            try:
+                os.remove(p)
+            except Exception:
+                pass
 
 
 def _download(url: str, dest: str) -> bool:
@@ -249,46 +252,57 @@ def self_update(info: UpdateInfo | None = None) -> tuple[bool, str]:
     return (True, f"Updated to v{info.latest}. Restart tuneassist to run the new version.")
 
 
-def _update_bat_script(exe: str, new: str) -> str:
-    """The batch handoff: wait, then loop MOVE until it succeeds (the running exe
-    stays locked until this process exits), then start the new version and delete
-    the script. Paths are quoted so spaces/parens in the path are safe."""
-    return (
-        "@echo off\r\n"
-        "ping -n 2 127.0.0.1 >nul\r\n"
-        ":loop\r\n"
-        f'move /y "{new}" "{exe}" >nul 2>&1\r\n'
-        "if errorlevel 1 (\r\n"
-        "  ping -n 2 127.0.0.1 >nul\r\n"
-        "  goto loop\r\n"
-        ")\r\n"
-        f'start "" "{exe}"\r\n'
-        'del "%~f0"\r\n'
-    )
+def _ps_quote(p: str) -> str:
+    """Single-quote a path for PowerShell (doubling any embedded single quotes)."""
+    return "'" + str(p).replace("'", "''") + "'"
+
+
+def _update_ps_script(exe: str, new: str, pid: int) -> str:
+    """The Windows handoff, as PowerShell: WAIT for this process (by PID) to exit
+    so the binary unlocks, then MOVE the new file onto it and relaunch. PowerShell
+    + -LiteralPath handles spaces and parentheses (e.g. 'tuneassist (2).exe') that
+    break a .bat, and waiting on the real PID is far more reliable than a timing
+    guess. The new file is moved ONTO the exe path, so it always ends up '.exe'."""
+    qexe, qnew = _ps_quote(exe), _ps_quote(new)
+    lines = [
+        "$ErrorActionPreference='SilentlyContinue'",
+        "try { Wait-Process -Id " + str(int(pid)) + " -Timeout 60 } catch {}",
+        "$ok=$false",
+        "for ($i=0; $i -lt 40; $i++) {",
+        "  Move-Item -LiteralPath " + qnew + " -Destination " + qexe + " -Force",
+        "  if ($?) { $ok=$true; break }",
+        "  Start-Sleep -Milliseconds 500",
+        "}",
+        "if ($ok) { Start-Process -FilePath " + qexe + " }",
+        "Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force",
+    ]
+    return "\r\n".join(lines) + "\r\n"
 
 
 def _windows_handoff(exe: str, new: str, info: "UpdateInfo") -> tuple[bool, str]:
-    """Write + launch a detached batch script that swaps the binary once this
-    process exits, then starts the new one."""
+    """Write + launch a detached PowerShell script that waits for THIS process to
+    exit, swaps the binary in, and relaunches it."""
     import subprocess
     import tempfile
-    bat = os.path.join(tempfile.gettempdir(), "tuneassist_update.bat")
-    script = _update_bat_script(exe, new)
+    ps1 = os.path.join(tempfile.gettempdir(), "tuneassist_update.ps1")
+    script = _update_ps_script(exe, new, os.getpid())
     try:
-        with open(bat, "w", encoding="ascii") as f:
+        with open(ps1, "w", encoding="utf-8") as f:
             f.write(script)
         DETACHED_PROCESS = 0x00000008
         CREATE_NO_WINDOW = 0x08000000
-        subprocess.Popen(["cmd", "/c", bat], close_fds=True,
-                         creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW)
+        subprocess.Popen(
+            ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden",
+             "-ExecutionPolicy", "Bypass", "-File", ps1],
+            close_fds=True, creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW)
     except Exception as e:
         try:
             os.remove(new)
         except Exception:
             pass
         return (False, f"Could not start the updater ({e}). Get it manually: {info.page_url}")
-    return (True, f"Installing v{info.latest} -- the app will close and reopen on the "
-                  "new version in a moment.")
+    return (True, f"Installing v{info.latest} -- the app will close and reopen "
+                  "automatically in a moment.")
 
 
 def relaunch() -> None:
