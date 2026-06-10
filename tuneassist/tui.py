@@ -420,7 +420,7 @@ class SetupScreen(Screen):
 class AnalyzeScreen(Screen):
     BINDINGS = [("g", "garage", "Garage"), ("a", "focus_path", "Analyze a log"),
                 ("ctrl+o", "pick_file", "Open file…"), ("s", "share_log", "Share log"),
-                ("q", "app.quit", "Quit")]
+                ("c", "copy_grid", "Copy grid (TSV)"), ("q", "app.quit", "Quit")]
 
     def compose(self) -> ComposeResult:
         demo = getattr(self.app, "demo", False)
@@ -450,6 +450,9 @@ class AnalyzeScreen(Screen):
             with TabPane("Report", id="tab-report"):
                 yield VerticalScroll(Static(self._welcome(), id="results"))
             with TabPane("Correction grid", id="tab-grid"):
+                with Horizontal(id="grid-actions"):
+                    yield Button("Copy grid → VCM/Holley (TSV)", id="copy-grid")
+                    yield Button("Copy MAF row (TSV)", id="copy-maf")
                 yield DataTable(id="grid", cursor_type="cell", zebra_stripes=True)
                 yield Static("  Click a cell for detail.", id="celldetail")
             with TabPane("Top cells", id="tab-cells"):
@@ -507,6 +510,44 @@ class AnalyzeScreen(Screen):
             self.action_pick_file()
         elif e.button.id == "share":
             self.action_share_log()
+        elif e.button.id == "copy-grid":
+            self.action_copy_grid()
+        elif e.button.id == "copy-maf":
+            self.action_copy_maf()
+
+    def _copy(self, text: str) -> None:
+        """Copy to the system clipboard (OSC 52 via Textual)."""
+        try:
+            self.app.copy_to_clipboard(text)
+        except Exception:                          # pragma: no cover - terminal-dependent
+            pass
+
+    def action_copy_grid(self):
+        """Copy the RPM x MAP correction as paste-ready TSV for VCM Editor / Holley."""
+        if not self._cr or not self._cr.has_grid:
+            self.notify("Analyze a log with a correction grid first.", severity="warning")
+            return
+        tsv = core.correction_tsv(self._cr)
+        if not tsv:
+            self.notify("No correction grid to copy.", severity="warning")
+            return
+        self._copy(tsv)
+        self.notify("Copied the RPM x MAP correction as TSV. In VCM Editor: select the "
+                    "matching VE/fuel cells, then Edit > Paste Special > Multiply by "
+                    "Percentage. (Holley: paste into the matching Base Fuel cells.)",
+                    title="Copied (TSV)", severity="information", timeout=12)
+
+    def action_copy_maf(self):
+        """Copy the MAF Airflow-vs-Frequency correction as a single TSV row."""
+        tsv = core.maf_tsv(self._cr) if self._cr else None
+        if not tsv:
+            self.notify("No MAF-curve correction here -- log the MAF Frequency (Hz) "
+                        "channel to build one.", severity="warning")
+            return
+        self._copy(tsv)
+        self.notify("Copied the MAF 'Airflow vs Frequency' row as TSV. Paste into the MAF "
+                    "calibration (Multiply by Percentage) -- NOT the VE table.",
+                    title="Copied (TSV)", severity="information", timeout=12)
 
     def action_pick_file(self):
         """Open the OS-native file picker (so you can browse anywhere)."""
@@ -704,6 +745,8 @@ class TuneAssistApp(App):
     #demohint { margin: 0 2; padding: 0 1; color: $text-muted; }
     #tabs { margin: 0 2; height: 1fr; }
     #results { padding: 1 2; }
+    #grid-actions { height: auto; margin: 0 2; }
+    #grid-actions Button { margin: 0 1 0 0; }
     #grid, #cells { height: 1fr; }
     #celldetail { height: auto; padding: 1 1 0 1; color: $text; }
     #cellshint { height: auto; padding: 0 1; color: $text-muted; }

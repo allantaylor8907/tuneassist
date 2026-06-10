@@ -113,6 +113,14 @@ correction grid, the spark grid, a plain-English diagnosis, and the next-step
 card. **Quick scan** skips the garage for a one-off. **Ctrl+T** cycles themes
 (dark by default), remembered per machine.
 
+**Paste straight into your tune.** On the Correction grid tab, **Copy grid (TSV)**
+(or press **c**) puts the RPM × MAP correction on your clipboard as tab-separated
+values. In **VCM Editor**: select the matching VE/fuel cells → Edit → **Paste
+Special → Multiply by Percentage** (low-confidence cells are 0, so they're left
+alone). **Holley:** paste into the matching Base Fuel cells. There's a **Copy MAF
+row** button for the Airflow-vs-Frequency curve too. (`--batch` writes the same as
+`.tsv` files.)
+
 It keeps a garage in `~/.tuneassist/garage.json`. Each car remembers its
 hardware (cam, block, compression), fuel, airflow strategy, and how far along the
 tune is — so when you come back days later with the next drive's log, you pick

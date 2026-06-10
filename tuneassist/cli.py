@@ -70,6 +70,16 @@ def run(path: str, platform: str = "auto", out_dir: str = "./out") -> None:
 
     # --- correct ---
     os.makedirs(out_dir, exist_ok=True)
+    from .core import grid_tsv
+
+    def _write_tsv(grid, name):
+        tsv = grid_tsv(grid, "percent")
+        if tsv:
+            p = os.path.join(out_dir, name)
+            open(p, "w", encoding="ascii").write(tsv)
+            print(f"Wrote paste-ready TSV to {p}  "
+                  "(VCM Editor / Holley: Paste Special > Multiply by Percentage)")
+
     if platform == "holley":
         corr, counts, disagree, notes = holley.analyze_holley(df, cfg)
         for n in notes:
@@ -77,10 +87,12 @@ def run(path: str, platform: str = "auto", out_dir: str = "./out") -> None:
         if not corr.empty:
             corr.to_csv(os.path.join(out_dir, "holley_base_fuel_correction.csv"))
             print(f"\nWrote base-fuel correction grid to {out_dir}/holley_base_fuel_correction.csv")
+            _write_tsv(corr, "holley_base_fuel_correction.tsv")
     else:
         res = analyze(df, cfg)
         report = write_report(res, out_dir)
         print(report)
+        _write_tsv(getattr(res, "correction", None), "ve_correction.tsv")
 
 
 def _print_update_notice():
