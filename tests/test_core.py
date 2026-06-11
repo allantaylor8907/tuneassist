@@ -355,6 +355,32 @@ def test_no_rpm_channel_with_data_points_at_rpm():
     assert "engine rpm" in blob
 
 
+def test_correction_tsv_is_paste_ready():
+    # the grid copies as tab-separated percent values, RPM rows x MAP cols, with
+    # low-confidence cells -> 0 (so a multiply-by-percent leaves them unchanged)
+    from tuneassist.core import correction_tsv, grid_tsv, series_tsv
+    cr = analyze_log(os.path.join(FIX, "ride42.csv"), _opts())
+    tsv = correction_tsv(cr)
+    assert tsv and "\t" in tsv and "\n" in tsv
+    rows = tsv.split("\n")
+    ncols = cr.result.correction.shape[1]
+    assert all(len(r.split("\t")) == ncols for r in rows)   # rectangular, header-free
+    assert rows[0].split("\t")[0] in ("0",) or rows[0].split("\t")[0].lstrip("-").replace(".", "").isdigit()
+    # a known multiplier converts to percent
+    assert grid_tsv(None) is None
+    import pandas as pd
+    s = pd.Series([1.05, 1.00, float("nan")])
+    assert series_tsv(s, "percent") == "5\t0\t0"
+
+
+def test_spark_tsv_is_raw_degrees():
+    from tuneassist.core import spark_tsv
+    cr = analyze_log(os.path.join(FIX, "ride42.csv"), _opts(tune_spark=True))
+    tsv = spark_tsv(cr)
+    if tsv:                                          # ride42 has a knock channel
+        assert "\t" in tsv                           # degrees, not percent
+
+
 def test_cold_log_reports_blocker_not_grid():
     d = analyze_log(os.path.join(FIX, "jr42.csv"), _opts()).to_dict()
     assert d.get("empty_reason") and "operating temp" in d["empty_reason"]

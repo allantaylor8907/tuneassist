@@ -578,6 +578,70 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
 
 
 # --------------------------------------------------------------------------
+# TSV export: paste a correction straight into VCM Editor / Holley.
+# VCM Editor: select the matching table region -> Edit -> Paste Special ->
+# Multiply by Percentage (VE/MAF) or Add (spark). Tab-separated, no headers; a
+# low-confidence cell becomes 0 so a multiply-by-percent leaves it unchanged.
+# --------------------------------------------------------------------------
+def _tsv_num(v) -> str:
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return "0"
+    s = f"{float(v):.2f}".rstrip("0").rstrip(".")
+    return s if s not in ("", "-0") else "0"
+
+
+def grid_tsv(grid, mode: str = "percent") -> str | None:
+    """A 2-D correction grid (RPM rows x MAP columns) as paste-ready TSV. mode
+    'percent' converts a multiplier (1.05) to +5; 'raw' passes the value through
+    (spark degrees)."""
+    if grid is None or getattr(grid, "empty", True):
+        return None
+    rows = []
+    for r in grid.index:
+        cells = []
+        for c in grid.columns:
+            v = grid.loc[r, c]
+            if pd.isna(v):
+                cells.append("0")
+            else:
+                cells.append(_tsv_num((float(v) - 1.0) * 100.0 if mode == "percent"
+                                      else float(v)))
+        rows.append("\t".join(cells))
+    return "\n".join(rows)
+
+
+def series_tsv(series, mode: str = "percent") -> str | None:
+    """A 1-D correction (e.g. the MAF Airflow-vs-Frequency row) as a single
+    tab-separated row."""
+    if series is None or getattr(series, "dropna", lambda: series)().empty:
+        return None
+    cells = []
+    for v in series:
+        if pd.isna(v):
+            cells.append("0")
+        else:
+            cells.append(_tsv_num((float(v) - 1.0) * 100.0 if mode == "percent" else float(v)))
+    return "\t".join(cells)
+
+
+def correction_tsv(cr) -> str | None:
+    """The VE/fuel RPM x MAP correction as percent TSV (the main paste target)."""
+    return grid_tsv(getattr(getattr(cr, "result", None), "correction", None), "percent")
+
+
+def maf_tsv(cr) -> str | None:
+    """The MAF Airflow-vs-Frequency correction as a single percent TSV row."""
+    maf = getattr(cr, "maf", None)
+    return series_tsv(maf[0] if maf else None, "percent")
+
+
+def spark_tsv(cr) -> str | None:
+    """The spark change grid (degrees to add/pull) as TSV -- paste with Add."""
+    sp = getattr(cr, "spark", None)
+    return grid_tsv(getattr(sp, "change", None) if sp else None, "raw")
+
+
+# --------------------------------------------------------------------------
 # JSON serialization (the contract)
 # --------------------------------------------------------------------------
 def _interval_label(iv) -> str:
