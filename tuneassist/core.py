@@ -420,6 +420,7 @@ class CoreResult:
     empty_reason: str | None = None
     findings: list = field(default_factory=list)   # diagnostics.Finding list
     notes: list = field(default_factory=list)
+    timeseries: dict | None = None         # downsampled traces (GUI timeline)
 
     @property
     def has_grid(self) -> bool:
@@ -571,10 +572,65 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
                               cam_points=opts.cam_points, spark=spark,
                               architecture=opts.architecture or "gm_gen3_ls")
 
+    try:
+        ts = build_timeseries(df, col)
+    except Exception:                      # pragma: no cover - defensive
+        ts = None
     return CoreResult(platform=platform, triage=tr, stage=stage, summary=summary,
                       make=opts.make, architecture=opts.architecture,
                       result=result, spark=spark, maf=maf, prescription=rx,
-                      empty_reason=empty_reason, findings=findings, notes=notes)
+                      empty_reason=empty_reason, findings=findings, notes=notes,
+                      timeseries=ts)
+
+
+def build_timeseries(df, col, max_points: int = 1500) -> dict | None:
+    """Compact, downsampled traces for the GUI timeline -- the 'point in time'
+    view of the log. Returns {t: [...], traces: {name: [...]}, events: [...]}
+    or None if there's no usable time/RPM. Values rounded to keep JSON small."""
+    if "rpm" not in col:
+        return None
+    n = len(df)
+    if n < 20:
+        return None
+    step = max(1, n // max_points)
+    idx = range(0, n, step)
+
+    def trace(key, nd=0):
+        if key not in col:
+            return None
+        v = pd.to_numeric(df[col[key]], errors="coerce")
+        return [None if pd.isna(x) else round(float(x), nd) for x in v.iloc[idx]]
+
+    t = (pd.to_numeric(df[col["time"]], errors="coerce")
+         if "time" in col else pd.Series(range(n)) * 0.05)
+    out_t = [round(float(x), 2) if not pd.isna(x) else None for x in t.iloc[idx]]
+
+    traces = {}
+    for key, nd in (("rpm", 0), ("map", 1), ("tps", 1), ("afr_actual", 2),
+                    ("afr_cmd", 2), ("stft", 1), ("ltft", 1), ("knock", 1),
+                    ("ect", 0), ("iat", 0), ("speed", 1), ("maf_freq", 0)):
+        tr = trace(key, nd)
+        if tr is not None and any(x is not None for x in tr):
+            traces[key] = tr
+    if "rpm" not in traces:
+        return None
+
+    # knock events: timestamps where retard exceeded 1 deg (for timeline markers)
+    events = []
+    if "knock" in col:
+        kn = pd.to_numeric(df[col["knock"]], errors="coerce")
+        hits = t[kn > 1.0]
+        if len(hits):
+            # collapse bursts: keep events at least 1s apart, cap at 50
+            last = None
+            for ts in hits:
+                ts = float(ts)
+                if last is None or ts - last >= 1.0:
+                    events.append({"t": round(ts, 2), "type": "knock"})
+                    last = ts
+                if len(events) >= 50:
+                    break
+    return {"t": out_t, "traces": traces, "events": events}
 
 
 # --------------------------------------------------------------------------
@@ -745,6 +801,22 @@ def result_to_dict(cr: CoreResult) -> dict:
                              "rationale": rx.rationale, "actions": list(rx.actions),
                              "drive": rx.drive, "capture": list(rx.capture),
                              "converged": rx.converged}
+
+    # --- additive GUI keys (v2): journey ladder, traces, paste-ready TSV ---
+    d["journey"] = [{"key": k, "title": t} for k, t in stages.STAGES]
+    if cr.timeseries:
+        d["timeseries"] = cr.timeseries
+    tsv = {}
+    for name, fn in (("correction", correction_tsv), ("maf", maf_tsv),
+                     ("spark", spark_tsv)):
+        try:
+            v = fn(cr)
+        except Exception:                  # pragma: no cover - defensive
+            v = None
+        if v:
+            tsv[name] = v
+    if tsv:
+        d["tsv"] = tsv
     return d
 
 

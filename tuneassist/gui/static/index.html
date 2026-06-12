@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>tuneassist</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body data-theme="dark" data-skill="beginner">
+
+<div id="app">
+  <!-- ============ sidebar ============ -->
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">TA</div>
+      <div class="brand-name">tuneassist</div>
+    </div>
+    <nav>
+      <button class="nav-item active" data-view="garage">
+        <span class="nav-ico">&#x1F3E0;</span> Garage</button>
+      <button class="nav-item" data-view="analyze" id="nav-analyze" disabled>
+        <span class="nav-ico">&#x1F4C8;</span> Analyze</button>
+      <button class="nav-item" data-view="settings">
+        <span class="nav-ico">&#x2699;</span> Settings</button>
+    </nav>
+    <div class="sidebar-foot">
+      <label class="skill-toggle" title="Beginner mode keeps it to the one next move; Expert shows every grid.">
+        <select id="skill-select">
+          <option value="beginner">Beginner mode</option>
+          <option value="expert">Expert mode</option>
+        </select>
+      </label>
+      <button id="theme-toggle" class="ghost" title="Toggle light/dark">&#x263E;</button>
+      <div class="version" id="version">v—</div>
+    </div>
+  </aside>
+
+  <!-- ============ main ============ -->
+  <main id="main">
+
+    <!-- ---------- GARAGE ---------- -->
+    <section id="view-garage" class="view active">
+      <header class="view-head">
+        <h1>Your garage</h1>
+        <p class="sub">Pick a build to continue its tune, or start fresh. Each vehicle
+        remembers its hardware, fuel, and where it sits on the journey.</p>
+      </header>
+      <div id="vehicle-grid" class="cards"></div>
+    </section>
+
+    <!-- ---------- SETUP ---------- -->
+    <section id="view-setup" class="view">
+      <header class="view-head">
+        <h1 id="setup-title">New vehicle</h1>
+        <p class="sub">Asked once — remembered every session after. Everything here
+        sharpens the advice; none of it is required for the core analysis.</p>
+      </header>
+      <form id="setup-form" class="setup-grid" autocomplete="off">
+        <div class="field" id="f-name"><label>Name</label>
+          <input id="s-name" placeholder="e.g. 5.3 iron truck"></div>
+        <div class="field" id="f-nick"><label>Nickname <span class="hint">(optional)</span></label>
+          <input id="s-nick" placeholder="e.g. Goldie"></div>
+        <div class="field"><label>Platform <span class="hint">(tuning software)</span></label>
+          <select id="s-platform"></select></div>
+        <div class="field"><label>Make</label><select id="s-make"></select></div>
+        <div class="field"><label>Generation / architecture
+          <span class="hint">(auto-detected from the log if unsure)</span></label>
+          <select id="s-arch"></select></div>
+        <div class="field"><label>Fuel</label><select id="s-fuel"></select></div>
+        <div class="field wide"><label>Airflow strategy
+          <span class="hint">(the journey: VE with MAF off first, then the MAF curve)</span></label>
+          <select id="s-airflow"></select></div>
+        <div class="field wide"><label>Engine</label><select id="s-engine"></select></div>
+        <div class="field wide"><label>Bolt-on mods <span class="hint">(they explain the data)</span></label>
+          <div id="s-mods" class="chips"></div></div>
+        <div class="field"><label>Camshaft</label><select id="s-cam"></select></div>
+        <div class="field switches">
+          <label class="switch"><input type="checkbox" id="s-spark"> Tune spark (knock-governed)</label>
+          <label class="switch"><input type="checkbox" id="s-power"> Find power (opt-in adds)</label>
+        </div>
+        <div class="form-actions wide">
+          <button type="button" class="ghost" id="setup-cancel">Cancel</button>
+          <button type="submit" class="primary" id="setup-save">Save &amp; continue</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ---------- ANALYZE ---------- -->
+    <section id="view-analyze" class="view">
+      <div id="vehicle-bar"></div>
+
+      <div id="journey-wrap">
+        <div id="journey"></div>
+        <div class="journey-note">do these in order — VE with the MAF off first, then the MAF curve</div>
+      </div>
+
+      <div id="dropzone">
+        <div class="dz-inner">
+          <div class="dz-icon">&#x1F4C4;</div>
+          <div class="dz-title">Drop your exported log CSV here</div>
+          <div class="dz-sub">VCM Scanner: Scan → Export Data &nbsp;·&nbsp; Holley: export to CSV.
+            Native .hpl / .dl binaries can't be read safely — CSV only.</div>
+          <div class="dz-actions">
+            <button class="primary" id="browse-btn">Browse…</button>
+            <span class="dz-or">or paste a path:</span>
+            <input id="path-input" placeholder="C:\Users\you\Documents\log.csv">
+            <button id="analyze-btn">Analyze</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="report" class="hidden"></div>
+    </section>
+
+    <!-- ---------- SETTINGS ---------- -->
+    <section id="view-settings" class="view">
+      <header class="view-head"><h1>Settings</h1></header>
+      <div class="settings-cards">
+        <div class="card">
+          <h3>Appearance</h3>
+          <p class="sub">Theme follows you between sessions.</p>
+          <button class="ghost" id="theme-toggle-2">Toggle light / dark</button>
+        </div>
+        <div class="card">
+          <h3>Updates</h3>
+          <p class="sub" id="update-status">Checks GitHub about once a day.</p>
+          <button class="ghost" id="check-update">Check for update</button>
+          <button class="primary hidden" id="install-update">Update &amp; restart</button>
+        </div>
+        <div class="card">
+          <h3>About</h3>
+          <p class="sub">Recommendation-only by design — it reads logs and tells you what
+          to change; it never writes to your ECU or tune file.</p>
+          <p class="sub">MIT licensed · <span id="about-version"></span></p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div id="toast-wrap"></div>
+
+<script src="vendor/echarts.min.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
