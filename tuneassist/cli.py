@@ -119,12 +119,12 @@ def main(argv=None):
     p.add_argument("--out-dir", default="./out")
     p.add_argument("--batch", action="store_true",
                    help="non-interactive: print the plain report and exit")
-    p.add_argument("--tui", action="store_true",
-                   help="launch the full Textual UI (this is the default with no args)")
     p.add_argument("--gui", action="store_true",
-                   help="launch the v2 desktop GUI (preview; will become the default)")
+                   help="launch the desktop GUI (this is the default with no args)")
     p.add_argument("--gui-dev", action="store_true",
                    help="run the GUI server for a normal browser (development)")
+    p.add_argument("--tui", action="store_true",
+                   help="launch the classic Textual terminal UI")
     p.add_argument("--demo", action="store_true",
                    help="launch the locked-down demo (bundled sample logs only)")
     p.add_argument("--json", action="store_true",
@@ -196,9 +196,10 @@ def main(argv=None):
         print("--batch needs a log file, e.g.  tuneassist your_log.csv --batch")
         return
 
-    # Default (e.g. double-clicking the downloaded binary): the full Textual UI.
-    from .tui import run_tui
-    run_tui()
+    # Default (e.g. double-clicking the downloaded binary): the v2 GUI.
+    # The Textual TUI remains reachable via --tui until it moves to legacy/.
+    from .gui.app import run_gui
+    run_gui()
 
 
 if __name__ == "__main__":

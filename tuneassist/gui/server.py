@@ -342,6 +342,21 @@ def make_handler(state: GuiState, token: str):
                 state.save_garage()
                 return self._json({"ok": True})
 
+            if path == "/api/update/passive":
+                # once-a-day throttled check (TUNEASSIST_NO_UPDATE_CHECK aware);
+                # the frontend calls this on boot and toasts if something's new
+                from .. import update
+                try:
+                    update.cleanup_old_binary()
+                    info = update.passive_check()
+                except Exception:
+                    info = None
+                if info is None:
+                    return self._json({"update": None})
+                return self._json({"update": {"current": info.current,
+                                              "latest": info.latest,
+                                              "url": info.page_url}})
+
             if path == "/api/update/check":
                 from .. import update
                 info = update.check_for_update()

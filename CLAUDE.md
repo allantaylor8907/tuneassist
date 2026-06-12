@@ -134,16 +134,21 @@ tunable state.
   whole-window drag-drop (overlay), native Browse via a TopMost-owner PowerShell
   dialog (plain ShowDialog hides behind the chromeless window). Brand: the
   heatmap-grid mark (`static/favicon.svg` + inline sidebar SVG, two-tone
-  wordmark). `--gui` / `--gui-dev`.
-  Currently a preview alongside the TUI; becomes the default at cutover
-  (TUI/panels then move to `legacy/`). Tested via in-process HTTP (test_gui).
-- `cli.py` — orchestrator. No args → Textual app (the default, so the downloaded
-  binary opens the UI on double-click); a bare log path or `--batch` → plain
-  text report (`cli.run`, for SSH/scripts); `--gui` → v2 GUI (preview);
-  `--tui` → Textual app; `--demo` → locked-down demo; `--json` → headless JSON. `--version`, `--check-update`,
-  `--update`, `--install-shortcut`; a throttled one-line update notice precedes
-  the report/batch flows. Version is single-sourced in `tuneassist/__init__.py`
-  (`__version__`); pyproject reads it dynamically.
+  wordmark). **The GUI is the no-args default since the v0.1.14 cutover** —
+  `_hide_own_console()` hides the double-click console (only when we're its sole
+  owner). The TUI stays reachable via `--tui` for one transition release, then
+  TUI/panels/demo move to `legacy/`. Setup is a fitment cascade (`fitment.py`):
+  HP Tuners → make → generation → engine; Holley → product → make → engine —
+  only real combinations (tests/test_fitment.py enforces). Tested via
+  in-process HTTP (test_gui).
+- `cli.py` — orchestrator. No args → the v2 GUI (the default, so the downloaded
+  binary opens the app on double-click); a bare log path or `--batch` → plain
+  text report (`cli.run`, for SSH/scripts); `--tui` → classic Textual app;
+  `--demo` → locked-down demo; `--json` → headless JSON. `--version`,
+  `--check-update`, `--update`, `--install-shortcut` (launcher opens the
+  default = GUI); a throttled one-line update notice precedes the report/batch
+  flows. Version is single-sourced in `tuneassist/__init__.py` (`__version__`);
+  pyproject reads it dynamically.
 
 ## Architecture / distribution
 - **UI is decoupled from the engine.** `core.py` is headless (data in → data out);
