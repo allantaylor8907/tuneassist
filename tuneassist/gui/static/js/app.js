@@ -677,4 +677,9 @@ $("#install-update").onclick = async () => {
     await loadPresets();
     await loadGarage();
   } catch (e) { toast("Couldn't reach the local engine: " + e.message, "err"); }
+  // passive once-a-day update notice (the default UI should surface new versions)
+  try {
+    const u = await api("api/update/passive", { body: {} });
+    if (u.update) toast(`Update available: v${u.update.current} → v${u.update.latest} — install it in Settings.`, "ok");
+  } catch (e) { /* offline is fine */ }
 })();

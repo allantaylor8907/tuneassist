@@ -8,19 +8,20 @@ from tuneassist import shortcut
 
 
 def test_target_and_args_is_sane():
+    # no-args launch = the default UI (the GUI since the v2 cutover)
     target, args, is_exe = shortcut._target_and_args()
-    assert target and "--tui" in args
+    assert target and "--tui" not in args
     assert isinstance(is_exe, bool)
 
 
 def test_linux_desktop_file_contents():
     with tempfile.TemporaryDirectory() as d:
         p = shortcut._write_linux_desktop(os.path.join(d, "tuneassist.desktop"),
-                                          "/opt/tuneassist", ["--tui"])
+                                          "/opt/tuneassist", [])
         body = open(p, encoding="utf-8").read()
         assert "[Desktop Entry]" in body
-        assert "Exec=/opt/tuneassist --tui" in body
-        assert "Terminal=true" in body
+        assert "Exec=/opt/tuneassist" in body
+        assert "Terminal=false" in body          # GUI default: no terminal window
         assert os.access(p, os.X_OK)
 
 

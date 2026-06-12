@@ -92,7 +92,7 @@ checks. Installed from source? `--update` points you at `pipx upgrade tuneassist
     pipx install .            # or: uv tool install .   -> `tuneassist` command
     # working on it:
     pip install -r requirements.txt
-    python -m tuneassist.cli --tui
+    python -m tuneassist.cli
 
 ---
 
@@ -103,18 +103,22 @@ Export Data; Holley software: export to CSV). The native `.hpl`/`.dl` files are
 raw binary with no channel names baked in — they can't be read safely, and
 guessing a column on a fuel calc is how you lean a motor out. CSV only.
 
-### The full UI (the default)
+### The app (the default)
 
-    tuneassist            # no arguments -> the full UI  (same as --tui)
+    tuneassist            # no arguments -> the desktop GUI  (same as --gui)
 
-Mouse and keyboard. A **garage** of your cars, a setup form, and the analysis
-screen — drop in a log and get the journey bar, heatmaps, the interactive
-correction grid, the spark grid, a plain-English diagnosis, and the next-step
-card. **Quick scan** skips the garage for a one-off. **Ctrl+T** cycles themes
-(dark by default), remembered per machine.
+Double-click and it opens as a desktop app (dark theme by default — there's a
+light mode too). A **garage** of your cars, a setup that only offers real
+combinations (HP Tuners → make → generation → engine; Holley → which Holley →
+engine), then **drag a log anywhere on the window** (or Browse) and get the
+journey stepper, the verdict and next move in plain English, findings cards,
+the interactive VE heatmap, the MAF curve, and a zoomable log timeline with
+knock markers. **Quick scan** skips the garage for a one-off look.
 
-**Paste straight into your tune.** On the Correction grid tab, **Copy grid (TSV)**
-(or press **c**) puts the RPM × MAP correction on your clipboard as tab-separated
+Prefer the terminal? The classic Textual UI is still there: `tuneassist --tui`.
+
+**Paste straight into your tune.** **Copy for VCM/Holley (TSV)** on the
+correction chart puts the RPM × MAP grid on your clipboard as tab-separated
 values. In **VCM Editor**: select the matching VE/fuel cells → Edit → **Paste
 Special → Multiply by Percentage** (low-confidence cells are 0, so they're left
 alone). **Holley:** paste into the matching Base Fuel cells. There's a **Copy MAF

@@ -17,6 +17,28 @@ import webbrowser
 from .server import start_server, serve_until_closed
 
 
+def _hide_own_console() -> None:
+    """Double-clicking the (console-subsystem) exe spawns a black console behind
+    the GUI window. Hide it -- but ONLY when this process is the console's sole
+    owner (i.e. it was double-clicked); when run from a user's terminal the
+    console has 2+ attached processes and we must leave it alone."""
+    if not sys.platform.startswith("win"):
+        return
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        user32 = ctypes.windll.user32
+        hwnd = kernel32.GetConsoleWindow()
+        if not hwnd:
+            return
+        pids = (ctypes.c_uint * 4)()
+        n = kernel32.GetConsoleProcessList(pids, 4)
+        if n == 1:                      # we own it alone -> launched by double-click
+            user32.ShowWindow(hwnd, 0)  # SW_HIDE
+    except Exception:
+        pass
+
+
 def _find_edge() -> str | None:
     for c in (os.path.expandvars(r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"),
               os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"),
@@ -56,6 +78,7 @@ def run_gui(garage_path: str | None = None, dev: bool = False) -> None:
         except KeyboardInterrupt:
             httpd.shutdown()
         return
+    _hide_own_console()
     if not open_window(url):
         print(f"Couldn't open a window -- browse to {url}")
     serve_until_closed(httpd, state)

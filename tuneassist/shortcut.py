@@ -19,15 +19,16 @@ APP_NAME = "tuneassist"
 def _target_and_args() -> tuple[str, list[str], bool]:
     """(launch_target, args, target_is_executable).
 
-    Frozen binary -> run the exe directly with --tui. Source/pip install -> the
-    `tuneassist` console script if it's on PATH, else `python -m tuneassist.cli`.
+    No args -> the default UI (the GUI since the v2 cutover). Frozen binary ->
+    run the exe directly; source/pip install -> the `tuneassist` console script
+    if it's on PATH, else `python -m tuneassist.cli`.
     """
     if getattr(sys, "frozen", False):
-        return sys.executable, ["--tui"], True
+        return sys.executable, [], True
     script = shutil.which(APP_NAME)
     if script:
-        return script, ["--tui"], True
-    return sys.executable, ["-m", "tuneassist.cli", "--tui"], False
+        return script, [], True
+    return sys.executable, ["-m", "tuneassist.cli"], False
 
 
 def _desktop_dir() -> str:
@@ -48,9 +49,9 @@ def _write_linux_desktop(path: str, target: str, args: list[str]) -> str:
         "[Desktop Entry]\n"
         "Type=Application\n"
         f"Name={APP_NAME}\n"
-        "Comment=AI-assisted engine tuning log analyzer\n"
+        "Comment=Engine tuning log analyzer\n"
         f"Exec={exec_line}\n"
-        "Terminal=true\n"
+        "Terminal=false\n"
         "Categories=Utility;Development;\n"
     )
     with open(path, "w", encoding="utf-8") as f:
