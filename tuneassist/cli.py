@@ -121,6 +121,10 @@ def main(argv=None):
                    help="non-interactive: print the plain report and exit")
     p.add_argument("--tui", action="store_true",
                    help="launch the full Textual UI (this is the default with no args)")
+    p.add_argument("--gui", action="store_true",
+                   help="launch the v2 desktop GUI (preview; will become the default)")
+    p.add_argument("--gui-dev", action="store_true",
+                   help="run the GUI server for a normal browser (development)")
     p.add_argument("--demo", action="store_true",
                    help="launch the locked-down demo (bundled sample logs only)")
     p.add_argument("--json", action="store_true",
@@ -155,6 +159,11 @@ def main(argv=None):
             print(f"Update available: v{info.current} -> v{info.latest}\n  {info.page_url}")
             print("  Install it with: tuneassist --update"
                   if update.is_frozen() else "  Upgrade with: pipx upgrade tuneassist")
+        return
+
+    if args.gui or args.gui_dev:
+        from .gui.app import run_gui
+        run_gui(dev=args.gui_dev)
         return
 
     if args.tui:

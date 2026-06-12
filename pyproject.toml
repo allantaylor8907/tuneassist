@@ -32,7 +32,11 @@ tuneassist-tui = "tuneassist.tui:run_tui"
 tuneassist-demo = "tuneassist.demo:run_demo"
 
 [tool.setuptools]
-packages = ["tuneassist"]
+packages = ["tuneassist", "tuneassist.gui"]
+
+[tool.setuptools.package-data]
+# the GUI's web assets ship inside the package (offline, no build step)
+"tuneassist.gui" = ["static/**/*"]
 
 [tool.setuptools.dynamic]
 version = { attr = "tuneassist.__version__" }

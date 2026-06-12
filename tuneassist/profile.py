@@ -28,7 +28,7 @@ class EngineProfile:
 # Common engine presets -> (label, displacement L, block, static compression).
 # Pick-a-engine instead of asking for block/CR by hand. Approximate stock CR.
 ENGINE_PRESETS = [
-    # --- Chevy / GM LS (Gen 3/4) ---
+    # --- GM LS Gen 3 (1997-2007, 24x) ---
     ("Chevy LS 4.8 (iron)",            4.8, "iron", 9.5),
     ("Chevy LS 5.3 (iron truck)",      5.3, "iron", 9.5),
     ("Chevy LS 5.3 (aluminum)",        5.3, "alum", 9.6),
@@ -36,9 +36,22 @@ ENGINE_PRESETS = [
     ("Chevy LS 6.0 LQ9 (iron)",        6.0, "iron", 10.0),
     ("Chevy LS1 5.7 (aluminum)",       5.7, "alum", 10.1),
     ("Chevy LS6 5.7 (aluminum)",       5.7, "alum", 10.5),
+    # --- GM LS Gen 4 (2005-2017, 58x, VVT/AFM) ---
     ("Chevy LS2 6.0 (aluminum)",       6.0, "alum", 10.9),
     ("Chevy LS3 6.2 (aluminum)",       6.2, "alum", 10.7),
-    # --- Chevy Gen I small/big block ---
+    ("Chevy LS7 7.0 (aluminum)",       7.0, "alum", 11.0),
+    ("Chevy L92/L94 6.2 (aluminum)",   6.2, "alum", 10.5),
+    ("Chevy LY6 6.0 (iron)",           6.0, "iron", 9.6),
+    ("Chevy LS 4.8/5.3 Gen 4 (iron)",  5.3, "iron", 9.7),
+    ("Chevy LSA 6.2 supercharged",     6.2, "alum", 9.1),
+    ("Chevy LS9 6.2 supercharged",     6.2, "alum", 9.1),
+    # --- GM LT Gen 5 (2014+, direct injection) ---
+    ("Chevy LT1 6.2 (aluminum)",       6.2, "alum", 11.5),
+    ("Chevy LT4 6.2 supercharged",     6.2, "alum", 10.0),
+    ("Chevy L83 5.3 (aluminum)",       5.3, "alum", 11.0),
+    ("Chevy L86 6.2 (aluminum)",       6.2, "alum", 11.5),
+    ("Chevy L8T 6.6 (iron)",           6.6, "iron", 10.8),
+    # --- Chevy Gen I small/big block (carb'd classics -> Holley) ---
     ("Chevy SBC 350 (iron)",           5.7, "iron", 9.0),
     ("Chevy SBC 383 stroker",          6.3, "iron", 9.5),
     ("Chevy BBC 454 (iron)",           7.4, "iron", 8.5),
@@ -49,7 +62,16 @@ ENGINE_PRESETS = [
     ("Ford 4.6 modular 2V/3V",         4.6, "alum", 9.8),
     ("Ford 5.4 modular",               5.4, "alum", 9.8),
     ("Ford Coyote 5.0",                5.0, "alum", 11.0),
+    ("Ford Godzilla 7.3 (iron)",       7.3, "iron", 10.5),
     ("Ford BBF 460 (iron)",            7.5, "iron", 8.5),
+    # --- Mopar Gen 3 HEMI (2003+) ---
+    ("Mopar HEMI 5.7",                 5.7, "iron", 10.5),
+    ("Mopar HEMI 6.1",                 6.1, "iron", 10.3),
+    ("Mopar HEMI 6.4",                 6.4, "iron", 10.9),
+    ("Mopar Hellcat 6.2 supercharged", 6.2, "iron", 9.5),
+    # --- Mopar classics ---
+    ("Mopar 360 LA (iron)",            5.9, "iron", 8.5),
+    ("Mopar 440 (iron)",               7.2, "iron", 9.0),
     # --- Pontiac ---
     ("Pontiac 400 (iron)",             6.6, "iron", 8.5),
     ("Pontiac 455 (iron)",             7.5, "iron", 8.4),

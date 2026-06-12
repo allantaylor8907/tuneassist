@@ -124,10 +124,23 @@ tunable state.
   `.lnk` via WScript.Shell COM, macOS `.command`, Linux `.desktop` (+ app-menu
   entry). Resolves the launch target for frozen binary vs pip/console-script vs
   `python -m`. Writers factored for testing; paths with spaces quoted. Tested.
+- `gui/` — **the v2 desktop GUI** (docs/V2.md): `server.py` is a stdlib-only
+  localhost HTTP server (random port + URL token, heartbeat lifecycle) exposing a
+  JSON API over core/garage/update/submit; `app.py` opens it in a chromeless
+  Edge app window (zero new deps; falls back to the default browser);
+  `static/` is a no-build-step HTML/CSS/JS frontend with vendored ECharts —
+  light/dark themes (dark default), journey stepper, verdict hero, findings
+  cards, VE heatmap, MAF row, log timeline with knock markers, TSV copy,
+  whole-window drag-drop (overlay), native Browse via a TopMost-owner PowerShell
+  dialog (plain ShowDialog hides behind the chromeless window). Brand: the
+  heatmap-grid mark (`static/favicon.svg` + inline sidebar SVG, two-tone
+  wordmark). `--gui` / `--gui-dev`.
+  Currently a preview alongside the TUI; becomes the default at cutover
+  (TUI/panels then move to `legacy/`). Tested via in-process HTTP (test_gui).
 - `cli.py` — orchestrator. No args → Textual app (the default, so the downloaded
   binary opens the UI on double-click); a bare log path or `--batch` → plain
-  text report (`cli.run`, for SSH/scripts); `--tui` → Textual app; `--demo` →
-  locked-down demo; `--json` → headless JSON. `--version`, `--check-update`,
+  text report (`cli.run`, for SSH/scripts); `--gui` → v2 GUI (preview);
+  `--tui` → Textual app; `--demo` → locked-down demo; `--json` → headless JSON. `--version`, `--check-update`,
   `--update`, `--install-shortcut`; a throttled one-line update notice precedes
   the report/batch flows. Version is single-sourced in `tuneassist/__init__.py`
   (`__version__`); pyproject reads it dynamically.
