@@ -129,8 +129,12 @@ tunable state.
   JSON API over core/garage/update/submit; `app.py` opens it in a chromeless
   Edge app window (zero new deps; falls back to the default browser);
   `static/` is a no-build-step HTML/CSS/JS frontend with vendored ECharts —
-  light/dark themes, journey stepper, verdict hero, findings cards, VE heatmap,
-  MAF row, log timeline with knock markers, TSV copy. `--gui` / `--gui-dev`.
+  light/dark themes (dark default), journey stepper, verdict hero, findings
+  cards, VE heatmap, MAF row, log timeline with knock markers, TSV copy,
+  whole-window drag-drop (overlay), native Browse via a TopMost-owner PowerShell
+  dialog (plain ShowDialog hides behind the chromeless window). Brand: the
+  heatmap-grid mark (`static/favicon.svg` + inline sidebar SVG, two-tone
+  wordmark). `--gui` / `--gui-dev`.
   Currently a preview alongside the TUI; becomes the default at cutover
   (TUI/panels then move to `legacy/`). Tested via in-process HTTP (test_gui).
 - `cli.py` — orchestrator. No args → Textual app (the default, so the downloaded

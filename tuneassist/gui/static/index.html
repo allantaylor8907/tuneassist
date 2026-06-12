@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <title>tuneassist</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body data-theme="dark" data-skill="beginner">
@@ -12,8 +14,19 @@
   <!-- ============ sidebar ============ -->
   <aside id="sidebar">
     <div class="brand">
-      <div class="brand-mark">TA</div>
-      <div class="brand-name">tuneassist</div>
+      <svg class="brand-mark" width="34" height="34" viewBox="0 0 56 56" aria-hidden="true">
+        <rect x="2" y="2" width="52" height="52" rx="13" fill="#2a3240"/>
+        <rect x="11" y="11" width="10" height="10" rx="2.5" fill="#39424f"/>
+        <rect x="23" y="11" width="10" height="10" rx="2.5" fill="#39424f"/>
+        <rect x="35" y="11" width="10" height="10" rx="2.5" fill="#EF9F27"/>
+        <rect x="11" y="23" width="10" height="10" rx="2.5" fill="#39424f"/>
+        <rect x="23" y="23" width="10" height="10" rx="2.5" fill="#FAC775"/>
+        <rect x="35" y="23" width="10" height="10" rx="2.5" fill="#39424f"/>
+        <rect x="11" y="35" width="10" height="10" rx="2.5" fill="#378ADD"/>
+        <rect x="23" y="35" width="10" height="10" rx="2.5" fill="#39424f"/>
+        <rect x="35" y="35" width="10" height="10" rx="2.5" fill="#39424f"/>
+      </svg>
+      <div class="brand-name">tune<span class="brand-half">assist</span></div>
     </div>
     <nav>
       <button class="nav-item active" data-view="garage">
@@ -140,6 +153,14 @@
 </div>
 
 <div id="toast-wrap"></div>
+
+<div id="drop-overlay" class="hidden">
+  <div class="drop-overlay-inner">
+    <div class="dz-icon">&#x1F4C4;</div>
+    <div class="dz-title">Drop the log to analyze</div>
+    <div class="dz-sub">Exported CSV from VCM Scanner or the Holley software</div>
+  </div>
+</div>
 
 <script src="vendor/echarts.min.js"></script>
 <script src="js/app.js"></script>

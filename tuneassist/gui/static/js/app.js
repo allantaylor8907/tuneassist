@@ -236,13 +236,35 @@ $("#browse-btn").onclick = async () => {
 $("#analyze-btn").onclick = () => runAnalyze();
 $("#path-input").addEventListener("keydown", e => { if (e.key === "Enter") runAnalyze(); });
 
-const dz = $("#dropzone");
-dz.addEventListener("dragover", e => { e.preventDefault(); dz.classList.add("dragover"); });
-dz.addEventListener("dragleave", () => dz.classList.remove("dragover"));
-dz.addEventListener("drop", async e => {
-  e.preventDefault(); dz.classList.remove("dragover");
+/* whole-window drag & drop: any file dropped anywhere analyzes it */
+let dragDepth = 0;
+function dragHasFiles(e) {
+  return e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files");
+}
+document.addEventListener("dragenter", e => {
+  if (!dragHasFiles(e)) return;
+  e.preventDefault();
+  dragDepth++;
+  $("#drop-overlay").classList.remove("hidden");
+});
+document.addEventListener("dragover", e => { if (dragHasFiles(e)) e.preventDefault(); });
+document.addEventListener("dragleave", e => {
+  if (!dragHasFiles(e)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) $("#drop-overlay").classList.add("hidden");
+});
+document.addEventListener("drop", async e => {
+  e.preventDefault();
+  dragDepth = 0;
+  $("#drop-overlay").classList.add("hidden");
   const f = e.dataTransfer.files && e.dataTransfer.files[0];
   if (!f) return;
+  if (!/\.(csv|txt)$/i.test(f.name)) {
+    toast("That's not a CSV. Export the log to CSV first (native .hpl/.dl can't be read safely).", "err");
+    return;
+  }
+  if (!S.current) S.current = { name: null, ephemeral: true, stoich: 14.7, airflow_mode: "ve_sd" };
+  enterAnalyze();
   busy(true);
   try {
     const r = await fetch(BASE + "api/analyze-upload", {

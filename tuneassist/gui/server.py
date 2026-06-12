@@ -121,13 +121,25 @@ def _vehicle_record(state: GuiState, name: str) -> dict | None:
 
 
 def _pick_file_native() -> str | None:
-    """OS-native open-file dialog (PowerShell on Windows). Returns path or None."""
+    """OS-native open-file dialog (PowerShell on Windows). Returns path or None.
+
+    The dialog gets a hidden TOPMOST owner form -- without one it opens BEHIND
+    the chromeless Edge app window and looks like the Browse button did nothing
+    (the bug this fixes)."""
     if not sys.platform.startswith("win"):
         return None
-    ps = ("Add-Type -AssemblyName System.Windows.Forms; "
-          "$f = New-Object System.Windows.Forms.OpenFileDialog; "
-          "$f.Filter = 'Log CSV (*.csv)|*.csv|All files (*.*)|*.*'; "
-          "if ($f.ShowDialog() -eq 'OK') { Write-Output $f.FileName }")
+    ps = (
+        "Add-Type -AssemblyName System.Windows.Forms | Out-Null; "
+        "$owner = New-Object System.Windows.Forms.Form; "
+        "$owner.TopMost = $true; $owner.ShowInTaskbar = $false; "
+        "$owner.WindowState = 'Minimized'; $owner.Opacity = 0; "
+        "$owner.Show(); $owner.Activate(); "
+        "$f = New-Object System.Windows.Forms.OpenFileDialog; "
+        "$f.Title = 'Select a log CSV'; "
+        "$f.Filter = 'Log CSV (*.csv)|*.csv|All files (*.*)|*.*'; "
+        "$r = $f.ShowDialog($owner); $owner.Close(); "
+        "if ($r -eq [System.Windows.Forms.DialogResult]::OK) "
+        "{ [Console]::Out.Write($f.FileName) }")
     try:
         out = subprocess.run(
             ["powershell", "-NoProfile", "-STA", "-Command", ps],

@@ -50,10 +50,9 @@ body { font-family: var(--font); background: var(--bg); color: var(--text);
 #sidebar { width: 216px; flex: none; display: flex; flex-direction: column;
   background: var(--bg-2); border-right: 1px solid var(--line); padding: 18px 12px; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 2px 8px 18px; }
-.brand-mark { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
-  background: linear-gradient(135deg, var(--accent), #7c4ddc);
-  color: #fff; font-weight: 700; font-size: 13px; letter-spacing: .5px; }
-.brand-name { font-weight: 650; font-size: 16px; letter-spacing: .2px; }
+.brand-mark { flex: none; }
+.brand-name { font-weight: 650; font-size: 16px; letter-spacing: -.2px; }
+.brand-half { color: var(--text-3); font-weight: 550; }
 nav { display: flex; flex-direction: column; gap: 2px; }
 .nav-item { display: flex; align-items: center; gap: 10px; width: 100%;
   background: none; border: 0; color: var(--text-2); font: inherit; font-weight: 520;
@@ -229,6 +228,15 @@ details.why .why-body { color: var(--text-2); font-size: 13.5px; background: var
 
 /* beginner/expert disclosure */
 body[data-skill="beginner"] .expert-only { display: none; }
+
+/* whole-window drop overlay */
+#drop-overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: blur(3px); }
+.drop-overlay-inner { border: 2.5px dashed var(--accent); border-radius: 16px;
+  background: var(--bg-2); padding: 46px 70px; text-align: center;
+  box-shadow: var(--shadow); }
+.drop-overlay-inner .dz-title { font-size: 19px; }
 
 /* spinners */
 .busy { pointer-events: none; opacity: .6; }
