@@ -36,12 +36,16 @@ jobs:
             # and must contain the OS keyword the self-updater matches on
             # (update.py: 'linux' / 'macos' / 'windows').
             asset: tuneassist-linux-x64
+            # PyInstaller --add-data uses ';' on Windows, ':' elsewhere
+            datasep: ":"
           - os: windows-latest
             binname: tuneassist.exe
             asset: tuneassist-windows-x64.exe
+            datasep: ";"
           - os: macos-latest
             binname: tuneassist
             asset: tuneassist-macos-arm64
+            datasep: ":"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -50,7 +54,7 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[build]"
       - name: Build single-file binary
-        run: pyinstaller --onefile --name tuneassist --noconfirm --paths . --collect-all textual packaging/entry.py
+        run: pyinstaller --onefile --name tuneassist --noconfirm --paths . --collect-all textual --add-data "tuneassist/gui/static${{ matrix.datasep }}tuneassist/gui/static" packaging/entry.py
       - name: Smoke-test the binary (headless JSON)
         shell: bash
         run: ./dist/${{ matrix.binname }} tests/fixtures/ride42.csv --json > out.json && python -c "import json;d=json.load(open('out.json'));assert d['stage']=='TUNE_VE_SD',d['stage'];print('binary OK')"
