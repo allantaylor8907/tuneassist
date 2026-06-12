@@ -27,6 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .. import __version__, garage
 from .. import core
+from .. import fitment
 from ..engine_gm import Config
 from ..profile import ENGINE_PRESETS, COMMON_MODS, preset_to_profile, EngineProfile
 from .. import cams
@@ -75,8 +76,9 @@ def _opts_from_payload(p: dict) -> tuple[str | None, core.SessionOpts]:
     )
     preset = p.get("engine_preset")
     mods = list(p.get("mods", []) or [])
+    power_adder = fitment.infer_power_adder(preset, mods)
     if preset and preset != "custom":
-        opts.profile = preset_to_profile(preset, mods=mods)
+        opts.profile = preset_to_profile(preset, power_adder=power_adder, mods=mods)
     elif mods or p.get("block") or p.get("displacement"):
         opts.profile = EngineProfile(
             block=p.get("block") or None,
@@ -224,6 +226,7 @@ def make_handler(state: GuiState, token: str):
                 from .. import stages
                 return self._json({
                     "journey": [{"key": k, "title": t} for k, t in stages.STAGES],
+                    "fitment": fitment.FITMENT,
                     "fuels": [{"label": l, "stoich": s} for l, s in FUELS],
                     "airflows": [{"label": l, "mode": m} for l, m in AIRFLOWS],
                     "cam_tiers": [{"label": l, "tier": t} for l, t in CAM_TIERS],

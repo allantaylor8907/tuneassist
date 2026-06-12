@@ -75,12 +75,14 @@
           <input id="s-nick" placeholder="e.g. Goldie"></div>
         <div class="field"><label>Platform <span class="hint">(tuning software)</span></label>
           <select id="s-platform"></select></div>
+        <div class="field hidden" id="f-product"><label>Holley system</label>
+          <select id="s-product"></select></div>
         <div class="field"><label>Make</label><select id="s-make"></select></div>
-        <div class="field"><label>Generation / architecture
+        <div class="field" id="f-arch"><label>Generation
           <span class="hint">(auto-detected from the log if unsure)</span></label>
           <select id="s-arch"></select></div>
         <div class="field"><label>Fuel</label><select id="s-fuel"></select></div>
-        <div class="field wide"><label>Airflow strategy
+        <div class="field wide" id="f-airflow"><label>Airflow strategy
           <span class="hint">(the journey: VE with MAF off first, then the MAF curve)</span></label>
           <select id="s-airflow"></select></div>
         <div class="field wide"><label>Engine</label><select id="s-engine"></select></div>

@@ -146,12 +146,9 @@ async function loadPresets() {
   p._journey = p.journey || [];
   p._journey.forEach((s, i) => p._stageIndex[s.key] = i);
   S.presets = p;
-  fill($("#s-platform"), p.platforms.map(x => [x.key, x.label]));
-  fill($("#s-make"), p.makes.map(x => [x.key, x.label]));
-  fill($("#s-arch"), p.architectures.map(x => [x.key, x.label]));
+  fill($("#s-platform"), Object.entries(p.fitment).map(([k, v]) => [k, v.label]));
   fill($("#s-fuel"), p.fuels.map((x, i) => [String(i), x.label]));
   fill($("#s-airflow"), p.airflows.map((x, i) => [String(i), x.label]));
-  fill($("#s-engine"), [["custom", "Custom / other"]].concat(p.engines.map(e => [e.label, e.label])));
   fill($("#s-cam"), p.cam_tiers.map(x => [x.tier, x.label]));
   const mods = $("#s-mods");
   mods.innerHTML = "";
@@ -161,10 +158,65 @@ async function loadPresets() {
     c.onclick = () => c.classList.toggle("on");
     mods.appendChild(c);
   }
+  cascade();          // populate product/make/generation/engine for the default platform
 }
 function fill(sel, pairs) {
   sel.innerHTML = pairs.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
 }
+
+/* ---------- fitment cascade: only real combinations are offered ----------
+   HP Tuners -> Make -> Generation -> Engine  (factory-ECU world)
+   Holley    -> System (Sniper/Terminator/...) -> Make -> Engine (flat)      */
+function cascade(changed) {
+  const f = S.presets.fitment;
+  const plat = $("#s-platform").value || Object.keys(f)[0];
+  const tree = f[plat];
+  const holley = !!tree.products;
+
+  $("#f-product").classList.toggle("hidden", !holley);
+  // Holley self-learns -- the VE/MAF airflow journey is an HP Tuners concept
+  $("#f-airflow").classList.toggle("hidden", holley);
+  if (holley && (changed === "platform" || !$("#s-product").options.length)) {
+    fill($("#s-product"), tree.products.map(x => [x.key, x.label]));
+  }
+
+  if (changed === "platform" || !$("#s-make").dataset.plat || $("#s-make").dataset.plat !== plat) {
+    fill($("#s-make"), tree.makes.map(m => [m.key, m.label]));
+    $("#s-make").dataset.plat = plat;
+  }
+  const make = $("#s-make").value;
+  const makeDef = tree.makes.find(m => m.key === make) || tree.makes[0];
+
+  // generation tier exists only where the factory ECU defines one (HP Tuners)
+  const gens = (makeDef && makeDef.generations) || [];
+  $("#f-arch").classList.toggle("hidden", !gens.length);
+  if (gens.length && (changed !== "arch")) {
+    const keep = $("#s-arch").value;
+    fill($("#s-arch"), [["auto", "Auto-detect from the log"]]
+         .concat(gens.map(g => [g.key, g.label])));
+    if ([...$("#s-arch").options].some(o => o.value === keep)) $("#s-arch").value = keep;
+  }
+  const gen = gens.length ? $("#s-arch").value : null;
+
+  // engines valid for this exact selection (+ always Custom)
+  let engines = [];
+  if (makeDef && makeDef.engines) engines = makeDef.engines;                  // Holley: flat
+  else if (gens.length) {
+    if (gen && gen !== "auto") {
+      const g = gens.find(x => x.key === gen);
+      engines = g ? g.engines : [];
+    } else {
+      gens.forEach(g => g.engines.forEach(e => { if (!engines.includes(e)) engines.push(e); }));
+    }
+  }
+  const keepE = $("#s-engine").value;
+  fill($("#s-engine"), [["custom", "Custom / other"]].concat(engines.map(e => [e, e])));
+  if ([...$("#s-engine").options].some(o => o.value === keepE)) $("#s-engine").value = keepE;
+}
+$("#s-platform").addEventListener("change", () => cascade("platform"));
+$("#s-product").addEventListener("change", () => cascade("product"));
+$("#s-make").addEventListener("change", () => cascade("make"));
+$("#s-arch").addEventListener("change", () => cascade("arch"));
 
 function openSetup(vehicle) {
   $("#setup-title").textContent = vehicle ? `Edit ${vehicle.nickname || vehicle.name}` : "New vehicle";
@@ -187,10 +239,16 @@ $("#setup-form").onsubmit = async (e) => {
 };
 function collectSetup() {
   const p = S.presets;
+  const plat = $("#s-platform").value;
+  const holley = !!p.fitment[plat].products;
+  // Holley: the product IS the architecture; HP Tuners: the generation is
+  // ("auto" -> null so the engine fingerprints the log instead).
+  const arch = holley ? $("#s-product").value
+             : ($("#s-arch").value === "auto" ? null : $("#s-arch").value);
   return {
-    platform: $("#s-platform").value,
+    platform: plat,
     make: $("#s-make").value === "other" ? null : $("#s-make").value,
-    architecture: $("#s-arch").value,
+    architecture: arch,
     stoich: p.fuels[Number($("#s-fuel").value)].stoich,
     airflow_mode: p.airflows[Number($("#s-airflow").value)].mode,
     engine_preset: $("#s-engine").value,

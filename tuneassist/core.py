@@ -132,15 +132,40 @@ def platform_label(platform: str) -> str:
 
 
 # Engine architectures (where the airflow/spark strategy lives). See
-# docs/TUNING_BY_PLATFORM.md for how each is tuned.
+# docs/TUNING_BY_PLATFORM.md for how each is tuned, and fitment.py for which
+# (platform, make, generation, engine) combinations are real.
 ARCHITECTURES = {
     "gm_gen3_ls": "GM Gen 3 LS (VE table + MAF)",
     "gm_gen4_ls": "GM Gen 4 LS (Virtual VE / MAF-only)",
     "gm_gen5_lt": "GM Gen 5 LT (direct injection)",
+    "ford_modular": "Ford Modular 4.6/5.4",
     "ford_coyote": "Ford Coyote (MAF / load %)",
-    "holley_selflearn": "Holley self-learning",
+    "ford_godzilla": "Ford Godzilla 7.3",
+    "mopar_hemi": "Mopar Gen 3 HEMI",
+    # Holley: the product IS the architecture (self-learn strategy throughout).
+    "holley_sniper": "Holley Sniper (TBI self-learn)",
+    "holley_terminator": "Holley Terminator X",
+    "holley_hp": "Holley HP EFI",
+    "holley_dominator": "Holley Dominator",
+    "holley_selflearn": "Holley self-learning",     # legacy records
     "generic": "Generic / other",
 }
+
+
+def detect_holley_product(path: str) -> str:
+    """Best-effort Holley product from the log header text (the same banner
+    detect_platform sniffs). Falls back to the generic self-learn key."""
+    try:
+        head = open(path, encoding="latin-1").read(4000).lower()
+    except OSError:
+        head = ""
+    if "sniper" in head:
+        return "holley_sniper"
+    if "terminator" in head:
+        return "holley_terminator"
+    if "dominator" in head:
+        return "holley_dominator"
+    return "holley_selflearn"
 
 
 def default_make_arch(platform: str) -> tuple[str, str]:
@@ -446,7 +471,10 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
     if opts.make is None:
         opts.make = detect_make(df)
     if opts.architecture is None:
-        opts.architecture = detect_architecture(df, opts.make, platform)
+        if platform == "holley":
+            opts.architecture = detect_holley_product(path)
+        else:
+            opts.architecture = detect_architecture(df, opts.make, platform)
 
     # Ethanol auto-detect: if the log carries an ethanol-content channel and it
     # disagrees with the configured stoich, trust the measurement (flex fuel).
