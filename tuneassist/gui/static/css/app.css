@@ -122,6 +122,50 @@ input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accen
 .switch { display: flex; gap: 8px; align-items: center; font-weight: 500; }
 .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
 
+/* ============ onboarding ============ */
+.head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.head-row #guided-btn { flex: none; margin-top: 4px; }
+
+#garage-hero { margin-bottom: 22px; }
+.hero-inner { display: flex; gap: 22px; align-items: center; background:
+  linear-gradient(135deg, var(--accent-soft), var(--bg-2) 70%);
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 26px 28px;
+  box-shadow: var(--shadow); }
+.hero-mark { font-size: 46px; flex: none; line-height: 1; }
+.hero-copy h2 { margin: 0 0 8px; font-size: 21px; font-weight: 680; letter-spacing: -.2px; }
+.hero-copy p { margin: 0 0 14px; color: var(--text-2); max-width: 74ch; }
+.hero-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.hero-foot { font-size: 12.5px; color: var(--text-3); margin: 14px 0 0 !important; }
+
+.onboard-banner { display: flex; align-items: center; gap: 10px; background: var(--accent-soft);
+  color: var(--accent); border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 16px;
+  font-weight: 540; font-size: 13.5px; }
+.onboard-banner .ob-step { flex: none; background: var(--accent); color: #fff; font-weight: 700;
+  font-size: 11.5px; padding: 3px 9px; border-radius: 999px; letter-spacing: .3px; }
+
+.firstlog-grid { display: grid; grid-template-columns: 1fr 1.4fr; gap: 16px; margin-bottom: 16px; }
+.firstlog-grid .card h3 { margin: 0 0 12px; font-size: 15.5px; }
+.fl-need ul { margin: 0; padding-left: 18px; color: var(--text-2); }
+.fl-need li { margin: 7px 0; }
+.fl-steps ol { margin: 0; padding-left: 4px; counter-reset: fl; list-style: none; }
+.fl-steps li { position: relative; padding: 0 0 16px 40px; counter-increment: fl; color: var(--text-2); }
+.fl-steps li:last-child { padding-bottom: 0; }
+.fl-steps li::before { content: counter(fl); position: absolute; left: 0; top: -2px;
+  width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff;
+  font-weight: 700; font-size: 13px; display: grid; place-items: center; }
+.fl-steps li:not(:last-child)::after { content: ""; position: absolute; left: 12.5px; top: 28px;
+  bottom: 6px; width: 2px; background: var(--line-2); }
+.fl-channels { margin-bottom: 16px; }
+.fl-channels h3 { margin: 0 0 6px; font-size: 15.5px; }
+.fl-channels .sub { margin: 0 0 12px; }
+.modchip.static { cursor: default; background: var(--bg-3); border-color: var(--line);
+  color: var(--text-2); font-size: 12.5px; padding: 5px 11px; }
+.fl-note { background: var(--warn-bg); border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line));
+  color: var(--text-2); border-radius: var(--radius-sm); padding: 13px 16px; margin-bottom: 18px;
+  font-size: 13.5px; }
+.fl-note strong { color: var(--warn); }
+@media (max-width: 760px) { .firstlog-grid { grid-template-columns: 1fr; } }
+
 /* ============ analyze: journey ============ */
 #vehicle-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 #vehicle-bar .vtitle { font-weight: 650; font-size: 16px; margin-right: 4px; }
@@ -209,6 +253,14 @@ details.why .why-body { color: var(--text-2); font-size: 13.5px; background: var
 #maf-chart { height: 200px; }
 #timeline-chart { height: 340px; }
 
+/* timeline lean/rich shading legend */
+.band-legend { margin-left: auto; display: flex; gap: 12px; align-items: center; }
+.band-legend .bl { display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text-3); }
+.band-legend .bl i { width: 16px; height: 11px; border-radius: 3px; display: inline-block; }
+.band-legend .bl.lean i { background: color-mix(in srgb, var(--crit) 28%, transparent); }
+.band-legend .bl.rich i { background: color-mix(in srgb, var(--pull) 24%, transparent); }
+
 .expander { margin-top: 4px; }
 
 /* toasts */
@@ -244,3 +296,59 @@ body[data-skill="beginner"] .expert-only { display: none; }
   border: 2px solid var(--text-3); border-top-color: transparent; animation: spin .8s linear infinite;
   vertical-align: -2px; margin-right: 7px; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============ motion / transitions ============ */
+@keyframes viewin { from { opacity: 0; transform: translateY(7px); } }
+@keyframes rise   { from { opacity: 0; transform: translateY(10px); } }
+@keyframes pop    { from { opacity: 0; transform: scale(.96); } }
+
+/* fade+slide each view as it becomes active */
+.view.active { animation: viewin .26s ease both; }
+
+/* tactile press on buttons + interactive chips */
+button:active { transform: translateY(1px) scale(.985); }
+.modchip:not(.static):active { transform: scale(.95); }
+
+/* the journey steps ease between states; the current step gives a soft pulse */
+.jstep { transition: color var(--tr), background var(--tr), border-color var(--tr), box-shadow var(--tr); }
+.jstep.now { animation: stepnow 1.8s ease-in-out infinite; }
+@keyframes stepnow {
+  0%, 100% { box-shadow: 0 0 0 3px var(--accent-soft); }
+  50%      { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent); } }
+
+/* garage cards rise in on first paint, gently staggered */
+.cards .vcard { animation: rise .32s cubic-bezier(.2,.7,.3,1) both; }
+.cards .vcard:nth-child(2) { animation-delay: .04s; }
+.cards .vcard:nth-child(3) { animation-delay: .08s; }
+.cards .vcard:nth-child(4) { animation-delay: .12s; }
+.cards .vcard:nth-child(5) { animation-delay: .16s; }
+.cards .vcard:nth-child(n+6) { animation-delay: .2s; }
+
+/* the report reveals top-down, one block at a time */
+#report > * { animation: rise .34s cubic-bezier(.2,.7,.3,1) both; }
+#report > *:nth-child(1) { animation-delay: .02s; }
+#report > *:nth-child(2) { animation-delay: .09s; }
+#report > *:nth-child(3) { animation-delay: .16s; }
+#report > *:nth-child(4) { animation-delay: .23s; }
+#report > *:nth-child(n+5) { animation-delay: .3s; }
+.findings .finding { animation: rise .3s ease both; }
+.findings .finding:nth-child(2) { animation-delay: .05s; }
+.findings .finding:nth-child(3) { animation-delay: .1s; }
+.findings .finding:nth-child(n+4) { animation-delay: .14s; }
+
+/* finding bodies expand smoothly */
+.finding .f-body, .why .why-body { animation: pop .2s ease both; }
+
+/* the drop overlay fades/scales in rather than snapping */
+#drop-overlay { animation: viewin .14s ease both; }
+.drop-overlay-inner { animation: pop .18s cubic-bezier(.2,.8,.3,1) both; }
+
+/* hero entrance */
+.hero-inner { animation: pop .3s cubic-bezier(.2,.8,.3,1) both; }
+
+/* respect the user's reduced-motion preference -- kill all the above */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important; }
+}

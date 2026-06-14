@@ -601,7 +601,7 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
                               architecture=opts.architecture or "gm_gen3_ls")
 
     try:
-        ts = build_timeseries(df, col)
+        ts = build_timeseries(df, col, stoich=cfg.stoich)
     except Exception:                      # pragma: no cover - defensive
         ts = None
     return CoreResult(platform=platform, triage=tr, stage=stage, summary=summary,
@@ -611,10 +611,11 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
                       timeseries=ts)
 
 
-def build_timeseries(df, col, max_points: int = 1500) -> dict | None:
+def build_timeseries(df, col, max_points: int = 1500, stoich: float = 14.7) -> dict | None:
     """Compact, downsampled traces for the GUI timeline -- the 'point in time'
-    view of the log. Returns {t: [...], traces: {name: [...]}, events: [...]}
-    or None if there's no usable time/RPM. Values rounded to keep JSON small."""
+    view of the log. Returns {t, traces, events, bands} or None if there's no
+    usable time/RPM. `bands` are dangerously-lean / overly-rich time ranges so
+    the timeline can shade them. Values rounded to keep JSON small."""
     if "rpm" not in col:
         return None
     n = len(df)
@@ -658,7 +659,78 @@ def build_timeseries(df, col, max_points: int = 1500) -> dict | None:
                     last = ts
                 if len(events) >= 50:
                     break
-    return {"t": out_t, "traces": traces, "events": events}
+
+    bands = _danger_bands(out_t, traces, stoich)
+    return {"t": out_t, "traces": traces, "events": events, "bands": bands}
+
+
+def _danger_bands(out_t, traces, stoich: float) -> list:
+    """Find time ranges where AFR was dangerously lean (under load) or way too
+    rich, as {from, to, type} for the timeline to shade. Works in ratio-to-target
+    terms so it scales with the fuel (pump vs E85): the target is the commanded
+    AFR when logged, else stoich. Lean is gated on being under load -- a lean
+    spike on a closed-throttle decel fuel-cut is harmless and must not flag."""
+    afr = traces.get("afr_actual")
+    if not afr or stoich <= 0:
+        return []
+    cmd = traces.get("afr_cmd")
+    tps = traces.get("tps")
+    mp = traces.get("map")
+    ect = traces.get("ect")
+    LEAN, RICH = 1.06, 0.86       # >=6% leaner than target under load; <=14% richer
+
+    classes = []
+    for i, t in enumerate(out_t):
+        a = afr[i] if i < len(afr) else None
+        if t is None or a is None or a <= 0:
+            classes.append(None); continue
+        target = cmd[i] if (cmd and i < len(cmd) and cmd[i]) else stoich
+        if not target or target <= 0:
+            target = stoich
+        ratio = a / target
+        under_load = ((tps and i < len(tps) and tps[i] is not None and tps[i] >= 50)
+                      or (mp and i < len(mp) and mp[i] is not None and mp[i] >= 80))
+        warm = not (ect and i < len(ect) and ect[i] is not None and ect[i] < 50)
+        if under_load and ratio >= LEAN:
+            classes.append("lean")
+        elif warm and ratio <= RICH and (not tps or i >= len(tps)
+                                         or tps[i] is None or tps[i] >= 8):
+            classes.append("rich")
+        else:
+            classes.append(None)
+
+    # the log's time scale: a band must be wide enough to actually SEE once the
+    # whole log is drawn across the chart, but not so wide it overstates a brief
+    # blip. Scale to the sample rate and the total span.
+    times = [x for x in out_t if x is not None]
+    if len(times) < 2:
+        return []
+    span = times[-1] - times[0]
+    dts = [b - a for a, b in zip(times, times[1:]) if b - a > 0]
+    med_dt = sorted(dts)[len(dts) // 2] if dts else 0.05
+    bridge = max(0.6, med_dt * 2.5)        # merge same-class points across noise gaps
+    min_w = max(med_dt * 1.5, span * 0.005)
+
+    bands, cur = [], None
+    for i, c in enumerate(classes):
+        t = out_t[i]
+        if c is None or t is None:
+            continue
+        if cur and cur["type"] == c and t - cur["to"] <= bridge:
+            cur["to"] = t
+        else:
+            cur = {"from": t, "to": t, "type": c}
+            bands.append(cur)
+    lo, hi = times[0], times[-1]
+    for b in bands:                        # widen thin bands symmetrically, in bounds
+        if b["to"] - b["from"] < min_w:
+            mid = (b["from"] + b["to"]) / 2.0
+            b["from"] = round(max(lo, mid - min_w / 2.0), 2)
+            b["to"] = round(min(hi, mid + min_w / 2.0), 2)
+    if len(bands) > 40:                    # keep the longest, then restore time order
+        bands.sort(key=lambda b: b["to"] - b["from"], reverse=True)
+        bands = sorted(bands[:40], key=lambda b: b["from"])
+    return bands
 
 
 # --------------------------------------------------------------------------

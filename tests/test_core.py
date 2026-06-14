@@ -406,6 +406,35 @@ def test_headless_writes_nothing_when_out_dir_none(tmp_path=None):
     assert set(os.listdir(FIX)) == before
 
 
+def test_danger_bands_lean_needs_load_and_rich_is_flagged():
+    from tuneassist.core import _danger_bands
+    t = [round(i * 0.1, 1) for i in range(40)]
+    # idle/decel lean spike (no load) must NOT flag; WOT lean must flag
+    afr, tps, mp, cmd = [], [], [], []
+    for i in range(40):
+        if 10 <= i < 20:           # WOT and lean -> dangerous
+            afr.append(13.8); tps.append(90); mp.append(98); cmd.append(12.8)
+        elif 25 <= i < 35:         # way rich, light throttle
+            afr.append(10.5); tps.append(30); mp.append(60); cmd.append(13.0)
+        else:                      # closed-throttle decel: lean but harmless
+            afr.append(16.5); tps.append(0); mp.append(25); cmd.append(14.7)
+    tr = {"afr_actual": afr, "afr_cmd": cmd, "tps": tps, "map": mp}
+    bands = _danger_bands(t, tr, 14.7)
+    types = {b["type"] for b in bands}
+    assert "lean" in types and "rich" in types
+    lean = [b for b in bands if b["type"] == "lean"][0]
+    assert lean["from"] >= 1.0 and lean["to"] <= 2.0      # only the WOT window
+    # the closed-throttle lean stretch (very lean AFR, zero TPS) produced no band
+    assert not any(b["type"] == "lean" and b["from"] >= 3.5 for b in bands)
+
+
+def test_danger_bands_empty_without_measured_afr():
+    from tuneassist.core import _danger_bands
+    t = [round(i * 0.1, 1) for i in range(20)]
+    tr = {"afr_cmd": [12.8] * 20, "tps": [90] * 20, "map": [98] * 20}  # no afr_actual
+    assert _danger_bands(t, tr, 14.7) == []
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

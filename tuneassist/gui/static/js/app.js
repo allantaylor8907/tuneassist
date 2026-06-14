@@ -13,6 +13,7 @@ const S = {
   current: null,       // selected vehicle record (or ephemeral setup)
   report: null,        // last analyze payload
   charts: {},
+  onboarding: false,   // guided first-car -> first-log walkthrough in progress
 };
 
 async function api(path, opts) {
@@ -73,6 +74,7 @@ $$(".nav-item").forEach(b => b.onclick = () => b.dataset.view && show(b.dataset.
 async function loadGarage() {
   const d = await api("api/garage");
   S.vehicles = d.vehicles || [];
+  renderHero(S.vehicles.length === 0);
   const grid = $("#vehicle-grid");
   grid.innerHTML = "";
   const STAGES = 8;
@@ -138,6 +140,105 @@ async function renameVehicle(v) {
   loadGarage();
 }
 function openVehicle(v) { S.current = v; enterAnalyze(); }
+
+/* ---------- onboarding: guided first car -> first log ---------- */
+function startGuided() { S.onboarding = true; openSetup(null); }
+$("#guided-btn").onclick = startGuided;
+
+function renderHero(empty) {
+  const hero = $("#garage-hero");
+  hero.classList.toggle("hidden", !empty);
+  if (!empty) { hero.innerHTML = ""; return; }
+  hero.innerHTML = `
+    <div class="hero-inner">
+      <div class="hero-mark">&#x1F9ED;</div>
+      <div class="hero-copy">
+        <h2>New here? Let's get your first car set up.</h2>
+        <p>Two quick steps: tell me about your car, then I'll show you exactly how to
+        grab your first log and turn it into a CSV — what to record, and whether you
+        need to change anything (you don't, yet). Then drop the log and I'll take it
+        from there.</p>
+        <div class="hero-actions">
+          <button class="primary" id="hero-start">Start guided setup</button>
+          <button class="ghost" id="hero-skip">I know what I'm doing</button>
+        </div>
+        <p class="hero-foot">Recommendation-only — it reads logs and tells you what to
+        change. It never writes to your ECU or tune file.</p>
+      </div>
+    </div>`;
+  $("#hero-start").onclick = startGuided;
+  $("#hero-skip").onclick = () => openSetup(null);
+}
+
+/* platform-aware "capture your first log" copy. platform 'gm' == HP Tuners. */
+function firstLogContent(v) {
+  const holley = (v.platform === "holley");
+  if (holley) return {
+    title: "Capture your first log — Holley EFI",
+    intro: "Your Holley replaces the factory ECU and logs for you — we just need to " +
+           "pull its datalog off the unit and export it to a CSV.",
+    need: ["Your Holley handheld, or a laptop with the Holley EFI software",
+           "A USB drive (or the handheld) to copy the log to your computer",
+           "A wideband — your Holley already has one built in",
+           "A safe place to let it idle and drive"],
+    steps: [
+      "Make sure datalogging is turned on. The handheld and the software can record to internal memory; some setups log to a USB/SD card.",
+      "Start a new datalog, then run the car: let it idle and self-learn for a bit, do some steady cruising, and — only if it's safe and you mean to — a pull or two.",
+      "Stop and save the log, then get it onto your computer (USB stick, or pull it through the handheld).",
+      "Open that datalog in the Holley EFI software and Export to CSV.",
+      "Come back here and drop the CSV anywhere on this window."],
+    chSub: "Holley records a full channel set by default, so there's usually nothing " +
+           "to add. Just confirm these are in the log:",
+    chips: ["RPM", "MAP", "TPS", "Wideband AFR (Air/Fuel)", "Target AFR",
+            "Closed-loop comp / Learn", "Coolant temp (CTS)", "Air temp (IAT/MAT)",
+            "Knock (if equipped)", "Vehicle speed (if wired)"],
+    note: "Holley self-learns fuel, so let it run a while before you pull the log — the " +
+          "more varied driving it sees, the better the data. You don't need to change " +
+          "anything to capture this baseline.",
+  };
+  return {
+    title: "Capture your first log — HP Tuners",
+    intro: "Your car keeps its factory ECU — we'll record what it's doing with VCM " +
+           "Scanner, then export that to a CSV.",
+    need: ["Your HP Tuners interface (MPVI2 / MPVI3) and the VCM Scanner software",
+           "A laptop in the car",
+           "A wideband O2 if you have one — it makes the fuel advice far better, but isn't required",
+           "A safe place to drive"],
+    steps: [
+      "Plug the interface into the OBD-II port, open VCM Scanner, and connect to the vehicle.",
+      "Add the channels below to your scan (Scanner's channel list / 'Add Channels' panel). Save it as a layout so you only do this once.",
+      "Hit record, then drive the baseline as the car sits now: let it idle and warm up, then steady cruising at a few speeds. Only do a wide-open-throttle pull if the car's safe and you mean to — for a first look, idle + cruise is plenty.",
+      "Stop recording, then Scan → Export Data and save it as a CSV.",
+      "Come back here and drop the CSV anywhere on this window."],
+    chSub: "In VCM Scanner, add these. Don't worry if one or two aren't available on " +
+           "your ECU — log what you can.",
+    chips: ["Engine RPM", "Manifold Pressure (MAP)", "MAF frequency",
+            "Wideband AFR (if equipped)", "Commanded AFR / EQ",
+            "Short-term fuel trim (B1/B2)", "Long-term fuel trim (B1/B2)",
+            "Coolant temp (ECT)", "Intake air temp (IAT)", "Throttle position (TPS)",
+            "Knock retard", "Vehicle speed", "Spark advance",
+            "Injector duty / pulse width", "Ethanol % (if flex-fuel)"],
+    note: "Leave your tune alone for this first log — don't switch off the MAF or closed " +
+          "loop yet. Grab the car exactly as it sits; once I read the log I'll tell you " +
+          "the precise next move (for VE tuning that's usually: MAF off, dial VE first, " +
+          "then the MAF curve).",
+  };
+}
+
+function enterFirstLog() {
+  const c = firstLogContent(S.current || {});
+  $("#fl-title").textContent = c.title;
+  $("#fl-intro").textContent = c.intro;
+  $("#fl-need-list").innerHTML = c.need.map(x => `<li>${esc(x)}</li>`).join("");
+  $("#fl-steps-list").innerHTML = c.steps.map(x => `<li>${esc(x)}</li>`).join("");
+  $("#fl-channels-sub").textContent = c.chSub;
+  $("#fl-channels-chips").innerHTML =
+    c.chips.map(x => `<span class="modchip static">${esc(x)}</span>`).join("");
+  $("#fl-note").innerHTML = `<strong>One thing:</strong> ${esc(c.note)}`;
+  show("firstlog");
+}
+$("#fl-later").onclick = () => { S.onboarding = false; loadGarage(); show("garage"); };
+$("#fl-ready").onclick = () => { S.onboarding = false; enterAnalyze(); };
 
 /* ---------- presets / setup ---------- */
 async function loadPresets() {
@@ -222,9 +323,11 @@ function openSetup(vehicle) {
   $("#setup-title").textContent = vehicle ? `Edit ${vehicle.nickname || vehicle.name}` : "New vehicle";
   $("#s-name").value = vehicle ? vehicle.name : "";
   $("#s-nick").value = (vehicle && vehicle.nickname) || "";
+  $("#setup-onboard").classList.toggle("hidden", !S.onboarding);
+  $("#setup-save").textContent = S.onboarding ? "Next: how to grab a log →" : "Save & continue";
   show("setup");
 }
-$("#setup-cancel").onclick = () => show("garage");
+$("#setup-cancel").onclick = () => { S.onboarding = false; show("garage"); };
 $("#setup-form").onsubmit = async (e) => {
   e.preventDefault();
   const name = $("#s-name").value.trim();
@@ -235,7 +338,7 @@ $("#setup-form").onsubmit = async (e) => {
   const d = await api("api/garage/upsert", { body });
   S.current = d.vehicle;
   await loadGarage();
-  enterAnalyze();
+  if (S.onboarding) enterFirstLog(); else enterAnalyze();
 };
 function collectSetup() {
   const p = S.presets;
@@ -478,15 +581,28 @@ function buildChartShells(d) {
     </div>`;
   }
   if (d.timeseries && d.timeseries.t && d.timeseries.t.length) {
+    const bands = (d.timeseries.bands || []);
+    const hasLean = bands.some(b => b.type === "lean");
+    const hasRich = bands.some(b => b.type === "rich");
+    const legend = (hasLean || hasRich) ? `
+      <div class="band-legend">
+        ${hasLean ? `<span class="bl lean"><i></i>lean under load</span>` : ""}
+        ${hasRich ? `<span class="bl rich"><i></i>too rich</span>` : ""}
+      </div>` : "";
     html += `
     <div class="chart-card">
       <div class="ch-head"><h3>Log timeline</h3>
-        <span class="ch-sub">when things happened — drag to zoom, hover for point-in-time readouts</span></div>
+        <span class="ch-sub">when things happened — drag to zoom, hover for point-in-time readouts</span>
+        ${legend}</div>
       <div id="timeline-chart" class="chart-box"></div>
       <details class="why expander"><summary>What am I looking at?</summary>
         <div class="why-body">The whole log over time: RPM, manifold pressure, and air-fuel ratio
-        (with the commanded target as a dashed line). Red markers flag <strong>knock events</strong> —
-        zoom in on one to see exactly what RPM/load/AFR the engine was at when it knocked.</div>
+        (with the commanded target as a dashed line). Red ticks flag <strong>knock events</strong> —
+        zoom in on one to see exactly what RPM/load/AFR the engine was at when it knocked.
+        <strong>Red shading = the engine ran dangerously lean while under load</strong> (the one to
+        chase first — lean + load is how parts break); <strong>blue shading = it ran much richer than
+        commanded.</strong> Shading compares actual AFR to the commanded target, so it scales with your
+        fuel.</div>
       </details>
     </div>`;
   }
@@ -621,6 +737,15 @@ function timeline(el, ts) {
   if (marks.length && series.length) {
     series[0].markLine = { symbol: "none", silent: true, label: { show: false },
       lineStyle: { color: C.crit, width: 1, opacity: .6 }, data: marks };
+  }
+  // shade dangerously-lean (under load) and overly-rich stretches
+  const bands = (ts.bands || []).map(b => ([
+    { xAxis: b.from, itemStyle: {
+        color: b.type === "lean" ? C.crit : C.pull,
+        opacity: b.type === "lean" ? 0.16 : 0.13 } },
+    { xAxis: b.to } ]));
+  if (bands.length && series.length) {
+    series[0].markArea = { silent: true, data: bands };
   }
   ch.setOption({
     animationDuration: 350,

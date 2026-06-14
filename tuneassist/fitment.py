@@ -53,25 +53,40 @@ _HPT_MOPAR = [
 ]
 
 # Holley engine lists per make: classics (carb-to-EFI) + common swaps. Flat --
-# the Holley strategy doesn't branch on engine generation.
+# the Holley strategy doesn't branch on engine generation. This is where the
+# muscle-car motors live, since Holley is what people retrofit onto them.
 _HOLLEY_MAKES = [
     {"key": "gm", "label": "GM / Chevy",
-     "engines": ["Chevy SBC 350 (iron)", "Chevy SBC 383 stroker",
-                 "Chevy BBC 454 (iron)", "Chevy LS 4.8 (iron)",
+     "engines": ["Chevy SBC 305 (iron)", "Chevy SBC 327 (iron)",
+                 "Chevy SBC 350 (iron)", "Chevy SBC 383 stroker",
+                 "Chevy SBC 400 (iron)", "Chevy BBC 396 (iron)",
+                 "Chevy BBC 427 (iron)", "Chevy BBC 454 (iron)",
+                 "Chevy BBC 502 crate (iron)", "Chevy LS 4.8 (iron)",
                  "Chevy LS 5.3 (iron truck)", "Chevy LS 5.3 (aluminum)",
                  "Chevy LS 6.0 LQ4 (iron)", "Chevy LS 6.0 LQ9 (iron)",
                  "Chevy LS1 5.7 (aluminum)", "Chevy LS6 5.7 (aluminum)",
                  "Chevy LS2 6.0 (aluminum)", "Chevy LS3 6.2 (aluminum)",
                  "Chevy LS7 7.0 (aluminum)"]},
     {"key": "ford", "label": "Ford",
-     "engines": ["Ford 5.0 / 302 (iron)", "Ford 347 stroker", "Ford 351W (iron)",
-                 "Ford BBF 460 (iron)", "Ford 4.6 modular 2V/3V",
-                 "Ford 5.4 modular", "Ford Coyote 5.0"]},
-    {"key": "mopar", "label": "Mopar",
-     "engines": ["Mopar 360 LA (iron)", "Mopar 440 (iron)", "Mopar HEMI 5.7",
+     "engines": ["Ford 289 (iron)", "Ford 5.0 / 302 (iron)", "Ford 347 stroker",
+                 "Ford 351W (iron)", "Ford 351C Cleveland (iron)",
+                 "Ford 390 FE (iron)", "Ford 428 FE (iron)", "Ford BBF 460 (iron)",
+                 "Ford 4.6 modular 2V/3V", "Ford 5.4 modular", "Ford Coyote 5.0"]},
+    {"key": "mopar", "label": "Mopar / Dodge",
+     "engines": ["Mopar 318 LA (iron)", "Mopar 340 LA (iron)",
+                 "Mopar 360 LA (iron)", "Mopar 383 B (iron)", "Mopar 400 B (iron)",
+                 "Mopar 426 HEMI (iron)", "Mopar 440 RB (iron)", "Mopar HEMI 5.7",
                  "Mopar HEMI 6.1", "Mopar HEMI 6.4"]},
     {"key": "pontiac", "label": "Pontiac",
-     "engines": ["Pontiac 400 (iron)", "Pontiac 455 (iron)"]},
+     "engines": ["Pontiac 350 (iron)", "Pontiac 389 (iron)", "Pontiac 400 (iron)",
+                 "Pontiac 428 (iron)", "Pontiac 455 (iron)"]},
+    {"key": "buick", "label": "Buick",
+     "engines": ["Buick 350 (iron)", "Buick 455 (iron)",
+                 "Buick 3.8 Turbo V6 (Grand National)"]},
+    {"key": "olds", "label": "Oldsmobile",
+     "engines": ["Olds 350 Rocket (iron)", "Olds 455 (iron)"]},
+    {"key": "amc", "label": "AMC / Jeep",
+     "engines": ["AMC 304 (iron)", "AMC 360 (iron)", "AMC 401 (iron)"]},
     {"key": "other", "label": "Other", "engines": []},
 ]
 
@@ -136,7 +151,8 @@ def engines_for(platform: str, make: str, generation: str | None = None) -> list
 def infer_power_adder(engine_label: str | None, mods: list | None) -> str:
     """'boost' for factory-blown presets or boost mods; 'nitrous' for the bottle."""
     mods = mods or []
-    if engine_label and "supercharged" in engine_label.lower():
+    lbl = (engine_label or "").lower()
+    if "supercharged" in lbl or "turbo" in lbl:   # e.g. Buick Grand National 3.8 Turbo
         return "boost"
     if any(m.lower() in ("turbo", "supercharger") for m in mods):
         return "boost"

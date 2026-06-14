@@ -76,6 +76,26 @@ def test_power_adder_inference():
     assert fitment.infer_power_adder("Chevy LS1 5.7 (aluminum)", ["Turbo"]) == "boost"
     assert fitment.infer_power_adder("Chevy LS1 5.7 (aluminum)", ["Nitrous"]) == "nitrous"
     assert fitment.infer_power_adder("Chevy LS1 5.7 (aluminum)", ["Ported heads"]) == "na"
+    # a factory-turbo classic (Grand National) is boosted from the label alone
+    assert fitment.infer_power_adder("Buick 3.8 Turbo V6 (Grand National)", []) == "boost"
+
+
+def test_muscle_car_makes_under_holley():
+    # the classic makes people retrofit Holley onto must be present and populated
+    makes = {m["key"]: m for m in fitment.makes_for("holley")}
+    for key in ("gm", "ford", "mopar", "pontiac", "buick", "olds", "amc"):
+        assert key in makes, f"Holley missing make {key}"
+        assert makes[key]["engines"], f"Holley make {key} has no engines"
+    # representative muscle motors land under the right make
+    assert "Chevy BBC 454 (iron)" in fitment.engines_for("holley", "gm")
+    assert "Ford 351C Cleveland (iron)" in fitment.engines_for("holley", "ford")
+    assert "Mopar 340 LA (iron)" in fitment.engines_for("holley", "mopar")
+    assert "Pontiac 389 (iron)" in fitment.engines_for("holley", "pontiac")
+    assert "Buick 455 (iron)" in fitment.engines_for("holley", "buick")
+    # none of these classics leak into the factory-ECU (HP Tuners) side
+    hpt = [e for p, m, g, e in _all_engines() if p == "gm"]
+    assert not any(x in hpt for x in
+                   ("Buick 455 (iron)", "Olds 455 (iron)", "AMC 360 (iron)"))
 
 
 if __name__ == "__main__":
