@@ -92,7 +92,10 @@ tunable state.
   to the nearest breakpoint (`_axis_edges` midpoints), relabels the grid to the
   breakpoint values (`_relabel_to_breakpoints`), and `correction_tsv` transposes
   to VCM Editor layout (RPM cols × MAP rows) so Paste Special lines up
-  cell-for-cell. `parse_axis`/`clean_ve_axes` tolerate pasted text.
+  cell-for-cell. `parse_axis` preserves the user's paste order (Holley MAP is
+  descending, VCM ascending); `parse_ve_table` reads a whole "Copy with Axis"
+  paste (RPM header row + MAP-led data rows) so the GUI takes one paste instead
+  of typed breakpoints; `clean_ve_axes` accepts `{table}` or `{rpm,map}`.
 - `panels.py` — **pure Rich renderable *builders*** (no printing/IO): banner,
   journey bar, triage, heatmaps, cross-check, spark, MAF, safety, prescription,
   and `build_report(cr, …)` (the whole result as one Group). Used by the TUI and

@@ -670,11 +670,59 @@ def parse_axis(value) -> list:
     return ordered
 
 
-def clean_ve_axes(axes) -> dict | None:
-    """Validate a {'rpm':..., 'map':...} axes spec into clean breakpoint lists,
-    or None if either axis is unusable (need >=2 breakpoints each)."""
-    if not axes:
+def parse_ve_table(text) -> dict | None:
+    """Parse a whole table pasted via 'Copy with Axis' (VCM Editor) into
+    {'rpm': [...], 'map': [...]} -- one paste, both axes, no typing.
+
+    The format: a header row of RPM values across the top (often led by '%' and
+    trailed by 'rpm'), then one data row per MAP breakpoint where the FIRST value
+    is the MAP, then a trailing 'kPa' label. We only need the two axes (the cell
+    values are ignored -- we compute our own correction). Order is preserved."""
+    if not isinstance(text, str) or not text.strip():
         return None
+    import re
+    header_rpm = None
+    map_bps: list = []
+    for ln in text.splitlines():
+        if not ln.strip():
+            continue
+        toks = [t for t in re.split(r"[\t,;]+|\s+", ln.strip()) if t]
+        if not toks:
+            continue
+        nums = []
+        for t in toks:
+            try:
+                nums.append(float(t))
+            except ValueError:
+                pass
+        first_is_num = True
+        try:
+            float(toks[0])
+        except ValueError:
+            first_is_num = False
+        is_header = ("rpm" in (t.lower() for t in toks)) or \
+                    (header_rpm is None and not first_is_num and len(nums) >= 2)
+        if is_header and header_rpm is None:
+            header_rpm = nums                  # the RPM axis (across the top)
+            continue
+        if not nums:                           # a label-only line like 'kPa'
+            continue
+        map_bps.append(nums[0])                # leading value of each data row = MAP
+    if not header_rpm or len(header_rpm) < 2 or len(map_bps) < 2:
+        return None
+    return {"rpm": header_rpm, "map": map_bps}
+
+
+def clean_ve_axes(axes) -> dict | None:
+    """Validate an axes spec into clean breakpoint lists, or None if unusable.
+    Accepts {'rpm':..., 'map':...} (lists or pasted text) OR {'table': '<whole
+    Copy-with-Axis paste>'} -- the table is parsed into the two axes first."""
+    if not isinstance(axes, dict) or not axes:
+        return None
+    if axes.get("table"):
+        parsed = parse_ve_table(axes.get("table"))
+        if parsed:
+            axes = parsed
     # sanity bounds: drop obviously-bogus values so a stray paste can't poison it
     rpm = [v for v in parse_axis(axes.get("rpm")) if 0 <= v <= 20000]
     mp = [v for v in parse_axis(axes.get("map")) if 0 <= v <= 400]

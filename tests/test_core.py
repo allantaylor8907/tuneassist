@@ -453,6 +453,25 @@ def test_parse_and_clean_axes():
     assert clean_ve_axes(None) is None
 
 
+def test_parse_ve_table_copy_with_axis():
+    # VCM Editor "Copy with Axis" pastes the whole table: RPM header row (led by
+    # '%', trailed by 'rpm'), one data row per MAP value, a trailing 'kPa'.
+    from tuneassist.core import parse_ve_table, clean_ve_axes
+    table = ("%\t400\t800\t1200\t1600\trpm\n"
+             "15\t38.2\t42.5\t45.5\t46.1\n"
+             "20\t41.5\t45.7\t49.3\t49.8\n"
+             "105\t79.2\t75.0\t74.1\t74.7\n"
+             "kPa")
+    p = parse_ve_table(table)
+    assert p["rpm"] == [400, 800, 1200, 1600]      # cell values + %/rpm ignored
+    assert p["map"] == [15, 20, 105]               # leading value of each data row
+    # clean_ve_axes accepts the raw paste under {"table": ...}
+    assert clean_ve_axes({"table": table}) == {"rpm": [400, 800, 1200, 1600],
+                                               "map": [15, 20, 105]}
+    # a plain (no-axis) paste / junk returns None so we fall back to manual entry
+    assert parse_ve_table("38.2\t42.5\n41.5\t45.7") is None
+
+
 def _synthetic_gm_log(path):
     import numpy as np, pandas as pd
     n = 4000

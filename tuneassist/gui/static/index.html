@@ -106,19 +106,25 @@
               <span class="hint">(optional — line the correction grid up with your tune's table)</span></summary>
             <div class="axes-body">
               <p class="sub">Your VE table's breakpoints rarely match our default bins, so the
-              copied correction can land in the wrong cells. Paste your table's axes once and the
-              grid + the copied TSV will match it <strong>cell-for-cell</strong>. Use the
-              <strong>RPM</strong> values across the top and the <strong>MAP (kPa)</strong> values
-              down the side, <strong>in the same order they appear in your table</strong> — we keep
-              it, so VCM (low→high) and Holley (high→low) both line up. Leave blank for standard bins.</p>
-              <div class="axes-grid">
-                <div class="field"><label>RPM breakpoints <span class="hint">(top row)</span></label>
-                  <textarea id="s-axis-rpm" rows="2"
-                    placeholder="400, 800, 1200, 1600, 2000, 2400, 2800, 3200, 3600, 4000, 4400, 4800, 5200, 5600, 6000, 6400, 6800, 7200, 7600, 8000"></textarea></div>
-                <div class="field"><label>MAP / kPa breakpoints <span class="hint">(side column)</span></label>
-                  <textarea id="s-axis-map" rows="2"
-                    placeholder="15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105"></textarea></div>
+              copied correction can land in the wrong cells. Line it up once and the grid + the
+              copied TSV will match your table <strong>cell-for-cell</strong>.</p>
+              <div class="field">
+                <label>Paste your VE table
+                  <span class="hint">— in VCM Editor: right-click the table → <strong>Copy with Axis</strong>, then paste here</span></label>
+                <textarea id="s-axis-table" rows="5" spellcheck="false"
+                  placeholder="Paste the whole table here. We read the RPM row across the top and the MAP (kPa) values down the side automatically — order and all (VCM low→high, Holley high→low both work). The cell values are ignored."></textarea>
               </div>
+              <details class="axes-manual" id="axes-manual">
+                <summary>Holley or no Copy-with-Axis? Enter the breakpoints manually</summary>
+                <div class="axes-grid">
+                  <div class="field"><label>RPM breakpoints <span class="hint">(top row)</span></label>
+                    <textarea id="s-axis-rpm" rows="2" spellcheck="false"
+                      placeholder="400, 800, 1200, 1600, 2000, 2400, 2800, 3200, 3600, 4000, 4400, 4800, 5200, 5600, 6000, 6400, 6800, 7200, 7600, 8000"></textarea></div>
+                  <div class="field"><label>MAP / kPa breakpoints <span class="hint">(side column, in your table's order)</span></label>
+                    <textarea id="s-axis-map" rows="2" spellcheck="false"
+                      placeholder="Holley runs high→low: 210, 158, 105, 103, 101, 99, 97, 95, 93, 91, 89, 87, 85, 83, 82, 80, 78, 76, 74, 72, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 20"></textarea></div>
+                </div>
+              </details>
               <div class="axes-status" id="axes-status"></div>
             </div>
           </details>
