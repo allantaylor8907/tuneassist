@@ -54,16 +54,27 @@
     <!-- ---------- GARAGE ---------- -->
     <section id="view-garage" class="view active">
       <header class="view-head">
-        <h1>Your garage</h1>
-        <p class="sub">Pick a build to continue its tune, or start fresh. Each vehicle
-        remembers its hardware, fuel, and where it sits on the journey.</p>
+        <div class="head-row">
+          <div>
+            <h1>Your garage</h1>
+            <p class="sub">Pick a build to continue its tune, or start fresh. Each vehicle
+            remembers its hardware, fuel, and where it sits on the journey.</p>
+          </div>
+          <button class="ghost" id="guided-btn" title="New to this? Walk through it step by step.">
+            &#x1F9ED; Guided setup</button>
+        </div>
       </header>
+      <div id="garage-hero" class="hidden"></div>
       <div id="vehicle-grid" class="cards"></div>
     </section>
 
     <!-- ---------- SETUP ---------- -->
     <section id="view-setup" class="view">
       <header class="view-head">
+        <div id="setup-onboard" class="onboard-banner hidden">
+          <span class="ob-step">Step 1 of 2</span>
+          Tell me about your car. Next I'll show you exactly how to grab your first log.
+        </div>
         <h1 id="setup-title">New vehicle</h1>
         <p class="sub">Asked once — remembered every session after. Everything here
         sharpens the advice; none of it is required for the core analysis.</p>
@@ -125,6 +136,39 @@
       </div>
 
       <div id="report" class="hidden"></div>
+    </section>
+
+    <!-- ---------- FIRST-LOG GUIDE ---------- -->
+    <section id="view-firstlog" class="view">
+      <header class="view-head">
+        <div class="onboard-banner">
+          <span class="ob-step">Step 2 of 2</span>
+          Capture your first log. You won't change your tune yet — we just need a
+          baseline of the car running.
+        </div>
+        <h1 id="fl-title">Capture your first log</h1>
+        <p class="sub" id="fl-intro"></p>
+      </header>
+      <div class="firstlog-grid">
+        <div class="card fl-need">
+          <h3 id="fl-need-title">What you'll need</h3>
+          <ul id="fl-need-list"></ul>
+        </div>
+        <div class="card fl-steps">
+          <h3>Step by step</h3>
+          <ol id="fl-steps-list"></ol>
+        </div>
+      </div>
+      <div class="card fl-channels" id="fl-channels">
+        <h3>Channels to log <span class="hint">(so the analysis has what it needs)</span></h3>
+        <p class="sub" id="fl-channels-sub"></p>
+        <div id="fl-channels-chips" class="chips"></div>
+      </div>
+      <div class="fl-note" id="fl-note"></div>
+      <div class="form-actions">
+        <button class="ghost" id="fl-later">I'll do this later</button>
+        <button class="primary" id="fl-ready">I've got my log — analyze it</button>
+      </div>
     </section>
 
     <!-- ---------- SETTINGS ---------- -->

@@ -130,17 +130,25 @@ tunable state.
   Edge app window (zero new deps; falls back to the default browser);
   `static/` is a no-build-step HTML/CSS/JS frontend with vendored ECharts —
   light/dark themes (dark default), journey stepper, verdict hero, findings
-  cards, VE heatmap, MAF row, log timeline with knock markers, TSV copy,
-  whole-window drag-drop (overlay), native Browse via a TopMost-owner PowerShell
-  dialog (plain ShowDialog hides behind the chromeless window). Brand: the
-  heatmap-grid mark (`static/favicon.svg` + inline sidebar SVG, two-tone
-  wordmark). **The GUI is the no-args default since the v0.1.14 cutover** —
-  `_hide_own_console()` hides the double-click console (only when we're its sole
-  owner). The TUI stays reachable via `--tui` for one transition release, then
-  TUI/panels/demo move to `legacy/`. Setup is a fitment cascade (`fitment.py`):
-  HP Tuners → make → generation → engine; Holley → product → make → engine —
-  only real combinations (tests/test_fitment.py enforces). Tested via
-  in-process HTTP (test_gui).
+  cards, VE heatmap, MAF row, log timeline with knock markers AND lean/rich
+  danger shading (markArea from `timeseries.bands`), TSV copy, whole-window
+  drag-drop (overlay), native Browse via a TopMost-owner PowerShell dialog
+  (plain ShowDialog hides behind the chromeless window). A motion layer
+  (view fades, staggered report/finding reveals, journey pulse) honors
+  `prefers-reduced-motion`. Brand: the heatmap-grid mark (`static/favicon.svg`
+  + inline sidebar SVG, two-tone wordmark). **The GUI is the no-args default
+  since the v0.1.14 cutover** — `_hide_own_console()` hides the double-click
+  console (only when we're its sole owner). The TUI stays reachable via `--tui`
+  for one transition release, then TUI/panels/demo move to `legacy/`. Setup is a
+  fitment cascade (`fitment.py`): HP Tuners → make → generation → engine; Holley
+  → product → make → engine — only real combinations (tests/test_fitment.py
+  enforces); the muscle-car roster (SBC/BBC, Pontiac/Buick/Olds/AMC classics,
+  FE/Cleveland Fords, B/RB Mopars) lives under Holley since those have no factory
+  ECU. **Beginner onboarding** (`app.js` `firstLogContent`/`enterFirstLog`): an
+  empty garage shows a guided hero; the flow walks add-a-car → a platform-aware
+  "capture your first log" guide (channels to log, export-to-CSV steps, "grab a
+  baseline, change nothing yet") before analysis. Tested via in-process HTTP
+  (test_gui).
 - `cli.py` — orchestrator. No args → the v2 GUI (the default, so the downloaded
   binary opens the app on double-click); a bare log path or `--batch` → plain
   text report (`cli.run`, for SSH/scripts); `--tui` → classic Textual app;

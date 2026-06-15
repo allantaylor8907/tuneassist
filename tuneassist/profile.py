@@ -51,30 +51,61 @@ ENGINE_PRESETS = [
     ("Chevy L83 5.3 (aluminum)",       5.3, "alum", 11.0),
     ("Chevy L86 6.2 (aluminum)",       6.2, "alum", 11.5),
     ("Chevy L8T 6.6 (iron)",           6.6, "iron", 10.8),
-    # --- Chevy Gen I small/big block (carb'd classics -> Holley) ---
+    # --- Chevy Gen I small-block (carb'd classics -> Holley) ---
+    ("Chevy SBC 305 (iron)",           5.0, "iron", 9.5),
+    ("Chevy SBC 327 (iron)",           5.4, "iron", 9.0),
     ("Chevy SBC 350 (iron)",           5.7, "iron", 9.0),
     ("Chevy SBC 383 stroker",          6.3, "iron", 9.5),
+    ("Chevy SBC 400 (iron)",           6.6, "iron", 8.5),
+    # --- Chevy big-block (carb'd classics -> Holley) ---
+    ("Chevy BBC 396 (iron)",           6.5, "iron", 9.0),
+    ("Chevy BBC 427 (iron)",           7.0, "iron", 9.0),
     ("Chevy BBC 454 (iron)",           7.4, "iron", 8.5),
-    # --- Ford ---
-    ("Ford 5.0 / 302 (iron)",          5.0, "iron", 9.0),
-    ("Ford 347 stroker",               5.7, "iron", 9.5),
-    ("Ford 351W (iron)",               5.8, "iron", 9.0),
+    ("Chevy BBC 502 crate (iron)",     8.2, "iron", 9.6),
+    # --- Ford modern (HP Tuners) ---
     ("Ford 4.6 modular 2V/3V",         4.6, "alum", 9.8),
     ("Ford 5.4 modular",               5.4, "alum", 9.8),
     ("Ford Coyote 5.0",                5.0, "alum", 11.0),
     ("Ford Godzilla 7.3 (iron)",       7.3, "iron", 10.5),
+    # --- Ford classics (carb'd -> Holley) ---
+    ("Ford 289 (iron)",                4.7, "iron", 9.0),
+    ("Ford 5.0 / 302 (iron)",          5.0, "iron", 9.0),
+    ("Ford 347 stroker",               5.7, "iron", 9.5),
+    ("Ford 351W (iron)",               5.8, "iron", 9.0),
+    ("Ford 351C Cleveland (iron)",     5.8, "iron", 9.0),
+    ("Ford 390 FE (iron)",             6.4, "iron", 9.5),
+    ("Ford 428 FE (iron)",             7.0, "iron", 9.0),
     ("Ford BBF 460 (iron)",            7.5, "iron", 8.5),
-    # --- Mopar Gen 3 HEMI (2003+) ---
+    # --- Mopar Gen 3 HEMI (2003+, HP Tuners) ---
     ("Mopar HEMI 5.7",                 5.7, "iron", 10.5),
     ("Mopar HEMI 6.1",                 6.1, "iron", 10.3),
     ("Mopar HEMI 6.4",                 6.4, "iron", 10.9),
     ("Mopar Hellcat 6.2 supercharged", 6.2, "iron", 9.5),
-    # --- Mopar classics ---
+    # --- Mopar classics (carb'd -> Holley) ---
+    ("Mopar 318 LA (iron)",            5.2, "iron", 9.0),
+    ("Mopar 340 LA (iron)",            5.6, "iron", 9.5),
     ("Mopar 360 LA (iron)",            5.9, "iron", 8.5),
-    ("Mopar 440 (iron)",               7.2, "iron", 9.0),
+    ("Mopar 383 B (iron)",             6.3, "iron", 9.5),
+    ("Mopar 400 B (iron)",             6.6, "iron", 8.2),
+    ("Mopar 426 HEMI (iron)",          7.0, "iron", 9.5),
+    ("Mopar 440 RB (iron)",            7.2, "iron", 9.0),
     # --- Pontiac ---
+    ("Pontiac 350 (iron)",             5.7, "iron", 8.0),
+    ("Pontiac 389 (iron)",             6.4, "iron", 8.6),
     ("Pontiac 400 (iron)",             6.6, "iron", 8.5),
+    ("Pontiac 428 (iron)",             7.0, "iron", 8.5),
     ("Pontiac 455 (iron)",             7.5, "iron", 8.4),
+    # --- Buick ---
+    ("Buick 350 (iron)",               5.7, "iron", 9.0),
+    ("Buick 455 (iron)",               7.5, "iron", 8.5),
+    ("Buick 3.8 Turbo V6 (Grand National)", 3.8, "iron", 8.0),
+    # --- Oldsmobile ---
+    ("Olds 350 Rocket (iron)",         5.7, "iron", 9.0),
+    ("Olds 455 (iron)",                7.5, "iron", 8.5),
+    # --- AMC / Jeep ---
+    ("AMC 304 (iron)",                 5.0, "iron", 8.4),
+    ("AMC 360 (iron)",                 5.9, "iron", 8.5),
+    ("AMC 401 (iron)",                 6.6, "iron", 9.5),
 ]
 
 # Common bolt-on mods (context; stored on the profile and shown in the summary).
