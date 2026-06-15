@@ -323,6 +323,12 @@ function openSetup(vehicle) {
   $("#setup-title").textContent = vehicle ? `Edit ${vehicle.nickname || vehicle.name}` : "New vehicle";
   $("#s-name").value = vehicle ? vehicle.name : "";
   $("#s-nick").value = (vehicle && vehicle.nickname) || "";
+  // prefill the custom VE axes (stored as arrays) when editing
+  const ax = (vehicle && vehicle.ve_axes) || null;
+  $("#s-axis-rpm").value = ax && ax.rpm ? ax.rpm.join(", ") : "";
+  $("#s-axis-map").value = ax && ax.map ? ax.map.join(", ") : "";
+  $("#axes-adv").open = !!ax;
+  updateAxesStatus();
   $("#setup-onboard").classList.toggle("hidden", !S.onboarding);
   $("#setup-save").textContent = S.onboarding ? "Next: how to grab a log →" : "Save & continue";
   show("setup");
@@ -359,8 +365,29 @@ function collectSetup() {
     cam_tier: $("#s-cam").value,
     tune_spark: $("#s-spark").checked,
     find_power: $("#s-power").checked,
+    ve_axes: { rpm: $("#s-axis-rpm").value, map: $("#s-axis-map").value },
   };
 }
+
+/* parse a pasted axis (commas/spaces/tabs/newlines) -> sorted unique numbers */
+function parseAxis(text) {
+  const nums = String(text || "").match(/-?\d+(?:\.\d+)?/g) || [];
+  return [...new Set(nums.map(Number))].sort((a, b) => a - b);
+}
+function updateAxesStatus() {
+  const r = parseAxis($("#s-axis-rpm").value), m = parseAxis($("#s-axis-map").value);
+  const el = $("#axes-status");
+  if (!r.length && !m.length) { el.textContent = ""; el.className = "axes-status"; return; }
+  if (r.length < 2 || m.length < 2) {
+    el.textContent = "Need at least 2 values on each axis (paste both the RPM row and the MAP column).";
+    el.className = "axes-status warn"; return;
+  }
+  el.textContent = `✓ ${r.length} RPM × ${m.length} MAP = ${r.length * m.length} cells — ` +
+    `the grid and copied TSV will match your table.`;
+  el.className = "axes-status ok";
+}
+$("#s-axis-rpm").addEventListener("input", updateAxesStatus);
+$("#s-axis-map").addEventListener("input", updateAxesStatus);
 
 /* ---------- analyze ---------- */
 function enterAnalyze() {
@@ -387,6 +414,7 @@ function analyzeOpts() {
     tune_spark: v.tune_spark !== false,        // spark insight on by default in GUI
     find_power: !!v.find_power,
     mods: (v.profile && v.profile.mods) || [],
+    ve_axes: v.ve_axes || null,                // bin the grid to this car's table
   };
 }
 
@@ -546,10 +574,14 @@ function buildFindings(d) {
 function buildChartShells(d) {
   let html = "";
   if (d.correction && d.correction.cells && d.correction.cells.length) {
+    const axN = d.ve_axes ? `${d.ve_axes.rpm.length}×${d.ve_axes.map.length}` : null;
+    const sub = axN
+      ? `% change per cell — matched to your VE table (${axN})`
+      : `% change per RPM × MAP cell — hover any cell`;
     html += `
     <div class="chart-card">
       <div class="ch-head">
-        <h3>VE / fuel correction</h3><span class="ch-sub">% change per RPM × MAP cell — hover any cell</span>
+        <h3>VE / fuel correction</h3><span class="ch-sub">${sub}</span>
         <div class="ch-actions">
           ${d.tsv && d.tsv.correction ? `<button id="copy-grid-tsv">Copy for VCM/Holley (TSV)</button>` : ""}
         </div>
@@ -614,8 +646,9 @@ function fmtPct(v) { if (v == null) return "—"; const s = v > 0 ? "+" : ""; re
 
 function wireReport(d) {
   const cg = $("#copy-grid-tsv");
-  if (cg) cg.onclick = () => copyText(d.tsv.correction,
-    "Copied. In VCM Editor: select the matching VE cells → Edit → Paste Special → Multiply by Percentage. (Holley: paste into Base Fuel.)");
+  if (cg) cg.onclick = () => copyText(d.tsv.correction, d.ve_axes
+    ? "Copied — laid out to match your table. In VCM Editor: click the top-left VE cell → Edit → Paste Special → Multiply by Percentage. (Holley: paste into Base Fuel.)"
+    : "Copied. In VCM Editor: select the matching VE cells → Edit → Paste Special → Multiply by Percentage. (Holley: paste into Base Fuel.)");
   const cm = $("#copy-maf-tsv");
   if (cm) cm.onclick = () => copyText(d.tsv.maf,
     "Copied the MAF row. Paste into the MAF calibration (Multiply by Percentage) — not the VE table.");

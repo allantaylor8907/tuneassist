@@ -435,6 +435,85 @@ def test_danger_bands_empty_without_measured_afr():
     assert _danger_bands(t, tr, 14.7) == []
 
 
+# --- custom VE table axes (real user request: grid must match his VE table) ---
+RPM_BP = [400, 800, 1200, 1600, 2000, 2400, 2800, 3200, 3600, 4000,
+          4400, 4800, 5200, 5600, 6000, 6400, 6800, 7200, 7600, 8000]   # 20
+MAP_BP = [15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85,
+          90, 95, 100, 105]                                             # 19
+
+
+def test_parse_and_clean_axes():
+    from tuneassist.core import parse_axis, clean_ve_axes
+    assert parse_axis("400, 800,1200\t1600 2000") == [400, 800, 1200, 1600, 2000]
+    assert parse_axis([20, 20, 40, 30]) == [20, 30, 40]          # sorted + deduped
+    assert clean_ve_axes({"rpm": "400 800 1200", "map": "20,40,60"}) == \
+        {"rpm": [400, 800, 1200], "map": [20, 40, 60]}
+    assert clean_ve_axes({"rpm": "400", "map": "20,40"}) is None  # need >=2 per axis
+    assert clean_ve_axes(None) is None
+
+
+def _synthetic_gm_log(path):
+    import numpy as np, pandas as pd
+    n = 4000
+    rpm = np.clip(3800 + 3600 * np.sin(np.arange(n) / 37), 600, 8000)
+    mapk = np.clip(60 + 46 * np.sin(np.arange(n) / 23), 15, 105)
+    knock = np.where(np.arange(n) % 400 == 0, 2.0, 0.0)         # occasional retard
+    pd.DataFrame({"Time": np.arange(n) * 0.05, "Engine RPM": rpm,
+                  "Intake Manifold Absolute Pressure": mapk,
+                  "Throttle Position": np.clip(mapk - 15, 0, 95),
+                  "Coolant Temp": np.full(n, 195.0),
+                  "Commanded AFR": np.full(n, 14.2),
+                  "Spark Advance": np.clip(28 - (mapk - 40) * 0.2, 8, 34),
+                  "Knock Retard": knock,
+                  "Short Term Fuel Trim Bank 1": np.full(n, 6.0),
+                  "Long Term Fuel Trim Bank 1": np.zeros(n)}).to_csv(path, index=False)
+
+
+def test_custom_ve_axes_resamples_to_table_and_transposes_tsv():
+    import tempfile
+    from tuneassist import core
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "log.csv")
+        _synthetic_gm_log(p)
+        # tune_spark on: spark has its OWN table axes, so custom VE axes must not
+        # leak into it (regression: inf bin edges crashed _interval_label).
+        cr = analyze_log(p, _opts(tune_spark=True,
+                                  ve_axes={"rpm": RPM_BP, "map": MAP_BP}), out_dir=None)
+    dd_spark = cr.to_dict()                                # must not raise
+    if dd_spark.get("spark", {}).get("cells"):
+        assert any("-" in c["rpm"] for c in dd_spark["spark"]["cells"])  # default bins
+    corr = cr.result.correction
+    # grid is now indexed by the EXACT breakpoints (RPM rows, MAP cols)
+    assert corr.index.tolist() == [float(x) for x in RPM_BP]
+    assert corr.columns.tolist() == [float(x) for x in MAP_BP]
+    assert corr.shape == (20, 19)
+    dd = cr.to_dict()
+    assert dd["ve_axes"] == {"rpm": [float(x) for x in RPM_BP],
+                             "map": [float(x) for x in MAP_BP]}
+    # the paste TSV is transposed to VCM Editor layout: MAP rows x RPM cols
+    rows = core.correction_tsv(cr).split("\n")
+    assert len(rows) == 19                       # one row per MAP breakpoint
+    assert all(len(r.split("\t")) == 20 for r in rows)   # one col per RPM breakpoint
+
+
+def test_no_axes_keeps_default_interval_bins():
+    cr = analyze_log(os.path.join(FIX, "ride42.csv"), _opts(), out_dir=None)
+    assert cr.ve_axes is None
+    # default grid still labels cells as ranges like "400-800", not breakpoints
+    cells = cr.to_dict().get("correction", {}).get("cells", [])
+    assert any("-" in c["rpm"] for c in cells)
+
+
+def test_ve_axes_round_trip_through_garage():
+    from tuneassist.core import opts_to_record, record_to_opts
+    opts = _opts(ve_axes={"rpm": RPM_BP, "map": MAP_BP})
+    rec = opts_to_record("gm", opts)
+    assert rec["ve_axes"]["rpm"][0] == 400 and len(rec["ve_axes"]["map"]) == 19
+    _, opts2 = record_to_opts(rec)
+    assert opts2.ve_axes == {"rpm": [float(x) for x in RPM_BP],
+                             "map": [float(x) for x in MAP_BP]}
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

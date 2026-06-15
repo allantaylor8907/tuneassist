@@ -100,6 +100,28 @@
         <div class="field wide"><label>Bolt-on mods <span class="hint">(they explain the data)</span></label>
           <div id="s-mods" class="chips"></div></div>
         <div class="field"><label>Camshaft</label><select id="s-cam"></select></div>
+        <div class="field wide">
+          <details class="axes-adv" id="axes-adv">
+            <summary>VE / fuel table axes
+              <span class="hint">(optional — line the correction grid up with your tune's table)</span></summary>
+            <div class="axes-body">
+              <p class="sub">Your VE table's breakpoints rarely match our default bins, so the
+              copied correction can land in the wrong cells. Paste your table's axes once and the
+              grid + the copied TSV will match it <strong>cell-for-cell</strong>. In VCM Editor:
+              the <strong>RPM</strong> row across the top, and the <strong>MAP (kPa)</strong> column
+              down the side. Leave blank to use standard bins.</p>
+              <div class="axes-grid">
+                <div class="field"><label>RPM breakpoints <span class="hint">(top row)</span></label>
+                  <textarea id="s-axis-rpm" rows="2"
+                    placeholder="400, 800, 1200, 1600, 2000, 2400, 2800, 3200, 3600, 4000, 4400, 4800, 5200, 5600, 6000, 6400, 6800, 7200, 7600, 8000"></textarea></div>
+                <div class="field"><label>MAP / kPa breakpoints <span class="hint">(side column)</span></label>
+                  <textarea id="s-axis-map" rows="2"
+                    placeholder="15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105"></textarea></div>
+              </div>
+              <div class="axes-status" id="axes-status"></div>
+            </div>
+          </details>
+        </div>
         <div class="field switches">
           <label class="switch"><input type="checkbox" id="s-spark"> Tune spark (knock-governed)</label>
           <label class="switch"><input type="checkbox" id="s-power"> Find power (opt-in adds)</label>

@@ -42,6 +42,10 @@ class SessionOpts:
     # `platform` (tuning software). Auto-derived/detected when left as None.
     make: str | None = None         # 'gm' | 'ford' | 'mopar' ...
     architecture: str | None = None  # 'gm_gen3_4_ls' | 'ford_coyote' ...
+    # The vehicle's REAL VE/base-fuel table breakpoints, so the correction grid
+    # matches the user's table cell-for-cell (his VCM Editor table rarely has the
+    # same axes as our defaults). {"rpm": [...], "map": [...]} or None = defaults.
+    ve_axes: dict | None = None
 
 
 def opts_to_record(platform: str, opts: "SessionOpts") -> dict:
@@ -56,6 +60,7 @@ def opts_to_record(platform: str, opts: "SessionOpts") -> dict:
         "airflow_mode": opts.airflow_mode,
         "tune_spark": opts.tune_spark,
         "find_power": opts.find_power,
+        "ve_axes": clean_ve_axes(opts.ve_axes),
         "cam": (None if cam is None else {
             "intake_dur_050": cam.intake_dur_050, "exhaust_dur_050": cam.exhaust_dur_050,
             "lsa": cam.lsa, "lift": cam.lift}),
@@ -79,7 +84,8 @@ def record_to_opts(record: dict):
                        tune_spark=record.get("tune_spark", False),
                        find_power=record.get("find_power", False),
                        make=record.get("make") or d_make,
-                       architecture=record.get("architecture") or d_arch)
+                       architecture=record.get("architecture") or d_arch,
+                       ve_axes=clean_ve_axes(record.get("ve_axes")))
     cam = record.get("cam")
     if cam:
         opts.cam_spec = cams.CamSpec(**cam)
@@ -446,6 +452,7 @@ class CoreResult:
     findings: list = field(default_factory=list)   # diagnostics.Finding list
     notes: list = field(default_factory=list)
     timeseries: dict | None = None         # downsampled traces (GUI timeline)
+    ve_axes: dict | None = None            # the custom table axes used, if any
 
     @property
     def has_grid(self) -> bool:
@@ -504,21 +511,41 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
     notes: list = []
     if eth_note:
         notes.append(eth_note)
+
+    # If the user gave their real VE/base-fuel table breakpoints, bin the
+    # correction onto THOSE exact axes so the grid (and paste-ready TSV) lines up
+    # cell-for-cell with the table in their tuning software. Use a copy of the cfg
+    # so ONLY the fuel correction is rebinned -- spark and MAF have their own,
+    # different table axes and must keep the default bins.
+    ve_axes = clean_ve_axes(opts.ve_axes)
+    corr_cfg = cfg
+    if ve_axes:
+        import copy as _copy
+        corr_cfg = _copy.copy(cfg)
+        corr_cfg.rpm_bins = _axis_edges(ve_axes["rpm"])
+        corr_cfg.map_bins = _axis_edges(ve_axes["map"])
+
     if tr.can_correct:
         if out_dir:
             os.makedirs(out_dir, exist_ok=True)
         try:
             if platform == "holley":
-                corr, counts, _disagree, hnotes = holley.analyze_holley(df, cfg)
+                corr, counts, _disagree, hnotes = holley.analyze_holley(df, corr_cfg)
                 result = _HolleyResult(corr, counts, hnotes)
                 if out_dir and not corr.empty:
                     corr.to_csv(os.path.join(out_dir, "holley_base_fuel_correction.csv"))
             else:
-                result = analyze(df, cfg)
+                result = analyze(df, corr_cfg)
                 if out_dir:
                     write_report(result, out_dir)
                 if opts.airflow_mode == "maf":
                     maf = maf_correction(df, cfg)
+            if ve_axes and result is not None:
+                _relabel_to_breakpoints(result, ve_axes["rpm"], ve_axes["map"])
+                notes.append(
+                    f"Correction binned to your VE table axes "
+                    f"({len(ve_axes['rpm'])} RPM x {len(ve_axes['map'])} MAP) -- the grid "
+                    "and the copied TSV line up with your table cell-for-cell.")
             summary = stages.summarize(result, cfg)
         except ValueError as e:
             notes.append(f"Could not analyze: {e}")
@@ -608,7 +635,68 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
                       make=opts.make, architecture=opts.architecture,
                       result=result, spark=spark, maf=maf, prescription=rx,
                       empty_reason=empty_reason, findings=findings, notes=notes,
-                      timeseries=ts)
+                      timeseries=ts, ve_axes=ve_axes)
+
+
+# --------------------------------------------------------------------------
+# Custom VE / base-fuel table axes -- so the correction grid lines up with the
+# user's actual table in VCM Editor / Holley (which rarely matches our defaults).
+# We can't read the closed binary tune, so the user supplies their table's RPM
+# and MAP breakpoints once; we snap each sample to the nearest breakpoint.
+# --------------------------------------------------------------------------
+def parse_axis(value) -> list:
+    """Parse an axis (a list of numbers, or pasted text from the tune table) into
+    sorted, de-duped breakpoints. Tolerates commas / spaces / tabs / newlines."""
+    import re
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        tokens = [str(v) for v in value]
+    else:
+        tokens = re.findall(r"-?\d+(?:\.\d+)?", str(value))
+    out = []
+    for tk in tokens:
+        try:
+            out.append(float(tk))
+        except (TypeError, ValueError):
+            continue
+    return sorted({round(v, 4) for v in out})
+
+
+def clean_ve_axes(axes) -> dict | None:
+    """Validate a {'rpm':..., 'map':...} axes spec into clean breakpoint lists,
+    or None if either axis is unusable (need >=2 breakpoints each)."""
+    if not axes:
+        return None
+    rpm = parse_axis(axes.get("rpm"))
+    mp = parse_axis(axes.get("map"))
+    # sanity bounds: drop obviously-bogus values so a stray paste can't poison it
+    rpm = [v for v in rpm if 0 <= v <= 20000]
+    mp = [v for v in mp if 0 <= v <= 400]
+    if len(rpm) < 2 or len(mp) < 2:
+        return None
+    return {"rpm": rpm, "map": mp}
+
+
+def _axis_edges(bps: list) -> list:
+    """Breakpoints -> pd.cut edges that snap each sample to its NEAREST breakpoint
+    (midpoints between values; open-ended so nothing falls outside)."""
+    import numpy as _np
+    mids = [(bps[i] + bps[i + 1]) / 2.0 for i in range(len(bps) - 1)]
+    return [-_np.inf] + mids + [_np.inf]
+
+
+def _relabel_to_breakpoints(result, rpm: list, mp: list) -> None:
+    """Rename a Result's grids from interval bins to the real breakpoint values
+    (RPM rows, MAP columns) so labels/TSV read as the user's table cells."""
+    grids = ["correction", "samples", "confidence", "recommendation", "wb_dev"]
+    for name in grids:
+        g = getattr(result, name, None)
+        if g is None or getattr(g, "empty", True):
+            continue
+        if len(g.index) == len(rpm) and len(g.columns) == len(mp):
+            g.index = pd.Index(rpm, name="rpm")
+            g.columns = pd.Index(mp, name="map")
 
 
 def build_timeseries(df, col, max_points: int = 1500, stoich: float = 14.7) -> dict | None:
@@ -781,8 +869,16 @@ def series_tsv(series, mode: str = "percent") -> str | None:
 
 
 def correction_tsv(cr) -> str | None:
-    """The VE/fuel RPM x MAP correction as percent TSV (the main paste target)."""
-    return grid_tsv(getattr(getattr(cr, "result", None), "correction", None), "percent")
+    """The VE/fuel correction as percent TSV (the main paste target).
+
+    With custom table axes we also transpose to the tuning software's layout --
+    VCM Editor's Main VE is RPM across the top (columns) and MAP down the side
+    (rows), the opposite of our internal RPM-rows x MAP-cols -- so a Paste Special
+    -> Multiply by Percentage drops into the selected table cell-for-cell."""
+    grid = getattr(getattr(cr, "result", None), "correction", None)
+    if grid is not None and getattr(cr, "ve_axes", None) and not getattr(grid, "empty", True):
+        grid = grid.T
+    return grid_tsv(grid, "percent")
 
 
 def maf_tsv(cr) -> str | None:
@@ -802,9 +898,12 @@ def spark_tsv(cr) -> str | None:
 # --------------------------------------------------------------------------
 def _interval_label(iv) -> str:
     try:
-        return f"{int(iv.left)}-{int(iv.right)}"
-    except (AttributeError, ValueError, TypeError):
-        return str(iv)
+        return f"{int(iv.left)}-{int(iv.right)}"     # default range bins: "400-800"
+    except (AttributeError, ValueError, TypeError, OverflowError):
+        pass
+    if isinstance(iv, (int, float)):                 # custom-axis breakpoint label
+        return str(int(iv)) if float(iv).is_integer() else str(iv)
+    return str(iv)
 
 
 def _grid_cells(grid, samples=None, transform=None):
@@ -906,6 +1005,8 @@ def result_to_dict(cr: CoreResult) -> dict:
     d["journey"] = [{"key": k, "title": t} for k, t in stages.STAGES]
     if cr.timeseries:
         d["timeseries"] = cr.timeseries
+    if cr.ve_axes:
+        d["ve_axes"] = cr.ve_axes          # the custom table axes the grid used
     tsv = {}
     for name, fn in (("correction", correction_tsv), ("maf", maf_tsv),
                      ("spark", spark_tsv)):
