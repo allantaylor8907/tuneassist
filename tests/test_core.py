@@ -435,6 +435,124 @@ def test_danger_bands_empty_without_measured_afr():
     assert _danger_bands(t, tr, 14.7) == []
 
 
+# --- custom VE table axes (real user request: grid must match his VE table) ---
+RPM_BP = [400, 800, 1200, 1600, 2000, 2400, 2800, 3200, 3600, 4000,
+          4400, 4800, 5200, 5600, 6000, 6400, 6800, 7200, 7600, 8000]   # 20
+MAP_BP = [15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85,
+          90, 95, 100, 105]                                             # 19
+
+
+def test_parse_and_clean_axes():
+    from tuneassist.core import parse_axis, clean_ve_axes
+    assert parse_axis("400, 800,1200\t1600 2000") == [400, 800, 1200, 1600, 2000]
+    assert parse_axis([20, 20, 40, 30]) == [20, 40, 30]          # order kept, deduped
+    assert parse_axis([105, 103, 101, 20]) == [105, 103, 101, 20]  # descending kept
+    assert clean_ve_axes({"rpm": "400 800 1200", "map": "20,40,60"}) == \
+        {"rpm": [400, 800, 1200], "map": [20, 40, 60]}
+    assert clean_ve_axes({"rpm": "400", "map": "20,40"}) is None  # need >=2 per axis
+    assert clean_ve_axes(None) is None
+
+
+def test_parse_ve_table_copy_with_axis():
+    # VCM Editor "Copy with Axis" pastes the whole table: RPM header row (led by
+    # '%', trailed by 'rpm'), one data row per MAP value, a trailing 'kPa'.
+    from tuneassist.core import parse_ve_table, clean_ve_axes
+    table = ("%\t400\t800\t1200\t1600\trpm\n"
+             "15\t38.2\t42.5\t45.5\t46.1\n"
+             "20\t41.5\t45.7\t49.3\t49.8\n"
+             "105\t79.2\t75.0\t74.1\t74.7\n"
+             "kPa")
+    p = parse_ve_table(table)
+    assert p["rpm"] == [400, 800, 1200, 1600]      # cell values + %/rpm ignored
+    assert p["map"] == [15, 20, 105]               # leading value of each data row
+    # clean_ve_axes accepts the raw paste under {"table": ...}
+    assert clean_ve_axes({"table": table}) == {"rpm": [400, 800, 1200, 1600],
+                                               "map": [15, 20, 105]}
+    # a plain (no-axis) paste / junk returns None so we fall back to manual entry
+    assert parse_ve_table("38.2\t42.5\n41.5\t45.7") is None
+
+
+def _synthetic_gm_log(path):
+    import numpy as np, pandas as pd
+    n = 4000
+    rpm = np.clip(3800 + 3600 * np.sin(np.arange(n) / 37), 600, 8000)
+    mapk = np.clip(60 + 46 * np.sin(np.arange(n) / 23), 15, 105)
+    knock = np.where(np.arange(n) % 400 == 0, 2.0, 0.0)         # occasional retard
+    pd.DataFrame({"Time": np.arange(n) * 0.05, "Engine RPM": rpm,
+                  "Intake Manifold Absolute Pressure": mapk,
+                  "Throttle Position": np.clip(mapk - 15, 0, 95),
+                  "Coolant Temp": np.full(n, 195.0),
+                  "Commanded AFR": np.full(n, 14.2),
+                  "Spark Advance": np.clip(28 - (mapk - 40) * 0.2, 8, 34),
+                  "Knock Retard": knock,
+                  "Short Term Fuel Trim Bank 1": np.full(n, 6.0),
+                  "Long Term Fuel Trim Bank 1": np.zeros(n)}).to_csv(path, index=False)
+
+
+def test_custom_ve_axes_resamples_to_table_and_transposes_tsv():
+    import tempfile
+    from tuneassist import core
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "log.csv")
+        _synthetic_gm_log(p)
+        # tune_spark on: spark has its OWN table axes, so custom VE axes must not
+        # leak into it (regression: inf bin edges crashed _interval_label).
+        cr = analyze_log(p, _opts(tune_spark=True,
+                                  ve_axes={"rpm": RPM_BP, "map": MAP_BP}), out_dir=None)
+    dd_spark = cr.to_dict()                                # must not raise
+    if dd_spark.get("spark", {}).get("cells"):
+        assert any("-" in c["rpm"] for c in dd_spark["spark"]["cells"])  # default bins
+    corr = cr.result.correction
+    # grid is now indexed by the EXACT breakpoints (RPM rows, MAP cols)
+    assert corr.index.tolist() == [float(x) for x in RPM_BP]
+    assert corr.columns.tolist() == [float(x) for x in MAP_BP]
+    assert corr.shape == (20, 19)
+    dd = cr.to_dict()
+    assert dd["ve_axes"] == {"rpm": [float(x) for x in RPM_BP],
+                             "map": [float(x) for x in MAP_BP]}
+    # the paste TSV is transposed to VCM Editor layout: MAP rows x RPM cols
+    rows = core.correction_tsv(cr).split("\n")
+    assert len(rows) == 19                       # one row per MAP breakpoint
+    assert all(len(r.split("\t")) == 20 for r in rows)   # one col per RPM breakpoint
+
+
+def test_holley_descending_nonuniform_map_axis_is_preserved():
+    # Holley Sniper lists MAP descending + non-uniform (210,158,105,103,...,20).
+    # The grid/TSV must mirror that exact order so a paste isn't flipped.
+    import tempfile
+    from tuneassist import core
+    hol_map = [105, 103, 101, 99, 97, 95, 90, 85, 80, 75, 70, 60, 50, 40, 30, 20]
+    rpm = [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 5000, 6000, 7000, 8000]
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "log.csv")
+        _synthetic_gm_log(p)
+        cr = analyze_log(p, _opts(ve_axes={"rpm": rpm, "map": hol_map}), out_dir=None)
+    # columns preserve the descending, non-uniform paste order exactly
+    assert cr.result.correction.columns.tolist() == [float(x) for x in hol_map]
+    assert cr.result.correction.index.tolist() == [float(x) for x in rpm]
+    # TSV is MAP-rows x RPM-cols; first row is the FIRST pasted MAP (105), last is 20
+    rows = core.correction_tsv(cr).split("\n")
+    assert len(rows) == len(hol_map) and len(rows[0].split("\t")) == len(rpm)
+
+
+def test_no_axes_keeps_default_interval_bins():
+    cr = analyze_log(os.path.join(FIX, "ride42.csv"), _opts(), out_dir=None)
+    assert cr.ve_axes is None
+    # default grid still labels cells as ranges like "400-800", not breakpoints
+    cells = cr.to_dict().get("correction", {}).get("cells", [])
+    assert any("-" in c["rpm"] for c in cells)
+
+
+def test_ve_axes_round_trip_through_garage():
+    from tuneassist.core import opts_to_record, record_to_opts
+    opts = _opts(ve_axes={"rpm": RPM_BP, "map": MAP_BP})
+    rec = opts_to_record("gm", opts)
+    assert rec["ve_axes"]["rpm"][0] == 400 and len(rec["ve_axes"]["map"]) == 19
+    _, opts2 = record_to_opts(rec)
+    assert opts2.ve_axes == {"rpm": [float(x) for x in RPM_BP],
+                             "map": [float(x) for x in MAP_BP]}
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

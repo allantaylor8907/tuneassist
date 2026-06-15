@@ -73,6 +73,7 @@ def _opts_from_payload(p: dict) -> tuple[str | None, core.SessionOpts]:
         find_power=bool(p.get("find_power", False)),
         make=p.get("make") or None,
         architecture=p.get("architecture") or None,
+        ve_axes=core.clean_ve_axes(p.get("ve_axes")),
     )
     preset = p.get("engine_preset")
     mods = list(p.get("mods", []) or [])

@@ -118,6 +118,32 @@ input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accen
 .chips .modchip { user-select: none; cursor: pointer; padding: 6px 12px; border-radius: 999px;
   background: var(--bg-2); border: 1px solid var(--line-2); font-size: 13px; transition: all var(--tr); }
 .chips .modchip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+/* advanced: custom VE table axes */
+.axes-adv summary { cursor: pointer; font-weight: 570; font-size: 13.5px; color: var(--text);
+  list-style: none; padding: 8px 0; }
+.axes-adv summary::-webkit-details-marker { display: none; }
+.axes-adv summary::before { content: "\25B8 "; color: var(--text-3); }
+.axes-adv[open] summary::before { content: "\25BE "; }
+.axes-body { background: var(--bg-3); border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 14px 16px; margin-top: 4px; }
+.axes-body .sub { margin: 0 0 12px; font-size: 13px; }
+.axes-body textarea { font: 12.5px/1.5 var(--mono); color: var(--text); background: var(--bg-2);
+  border: 1px solid var(--line-2); border-radius: var(--radius-sm); padding: 8px 10px;
+  resize: vertical; width: 100%; }
+.axes-body textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.axes-manual { margin-top: 12px; }
+.axes-manual summary { cursor: pointer; font-size: 12.5px; color: var(--accent); font-weight: 540;
+  list-style: none; }
+.axes-manual summary::-webkit-details-marker { display: none; }
+.axes-manual summary::before { content: "+ "; }
+.axes-manual[open] summary::before { content: "– "; }
+.axes-manual[open] summary { margin-bottom: 10px; }
+.axes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.axes-status { font-size: 12.5px; margin-top: 10px; min-height: 16px; color: var(--text-3); }
+.axes-status.ok { color: var(--opp); font-weight: 540; }
+.axes-status.warn { color: var(--warn); }
+@media (max-width: 680px) { .axes-grid { grid-template-columns: 1fr; } }
+
 .switches { flex-direction: row; gap: 22px; align-items: center; }
 .switch { display: flex; gap: 8px; align-items: center; font-weight: 500; }
 .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }

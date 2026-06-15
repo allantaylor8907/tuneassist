@@ -84,7 +84,18 @@ tunable state.
   `_blocked_prescription`, the garage codec `opts_to_record`/`record_to_opts`,
   `_primary_change_finding` (the lead "apply this" item), `_annotate_safety_
   resolution` (does the change fix the safety issue?), and `_apply_mod_insights`
-  (bolt-ons explain the data — DESIGN §13).
+  (bolt-ons explain the data — DESIGN §13). **Custom VE table axes**
+  (`SessionOpts.ve_axes` = `{rpm:[…], map:[…]}`, per-vehicle, garage-persisted):
+  the user pastes their real VE/base-fuel table breakpoints (we can't read the
+  binary tune) and `analyze_log` bins the correction onto exactly those axes via
+  a *copied* cfg (so spark/MAF keep their own default axes), snapping each sample
+  to the nearest breakpoint (`_axis_edges` midpoints), relabels the grid to the
+  breakpoint values (`_relabel_to_breakpoints`), and `correction_tsv` transposes
+  to VCM Editor layout (RPM cols × MAP rows) so Paste Special lines up
+  cell-for-cell. `parse_axis` preserves the user's paste order (Holley MAP is
+  descending, VCM ascending); `parse_ve_table` reads a whole "Copy with Axis"
+  paste (RPM header row + MAP-led data rows) so the GUI takes one paste instead
+  of typed breakpoints; `clean_ve_axes` accepts `{table}` or `{rpm,map}`.
 - `panels.py` — **pure Rich renderable *builders*** (no printing/IO): banner,
   journey bar, triage, heatmaps, cross-check, spark, MAF, safety, prescription,
   and `build_report(cr, …)` (the whole result as one Group). Used by the TUI and
