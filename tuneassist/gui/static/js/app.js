@@ -751,6 +751,9 @@ function veHeatmap(el, d) {
              splitArea: { show: true } },
     visualMap: { min: -lim, max: lim, calculable: true, orient: "vertical",
       right: 6, top: "middle", text: ["add fuel", "pull fuel"],
+      // color by the correction VALUE (dim 2); without this ECharts defaults to
+      // the last data dim (samples), so negative cells wrongly showed as orange.
+      dimension: 2,
       textStyle: { color: C.text3, fontSize: 11 },
       inRange: { color: [C.pull, C.bg2, C.add] } },
     tooltip: { confine: true, formatter: p => {
