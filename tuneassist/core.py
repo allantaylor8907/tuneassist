@@ -646,7 +646,11 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
 # --------------------------------------------------------------------------
 def parse_axis(value) -> list:
     """Parse an axis (a list of numbers, or pasted text from the tune table) into
-    sorted, de-duped breakpoints. Tolerates commas / spaces / tabs / newlines."""
+    de-duped breakpoints, PRESERVING the order they were given. Order matters:
+    VCM Editor lists MAP ascending down the side (15->105) but Holley lists it
+    descending (210->20), so we mirror exactly what the user pasted and only sort
+    internally for the snap math -- otherwise a Holley paste comes out flipped.
+    Tolerates commas / spaces / tabs / newlines."""
     import re
     if value is None:
         return []
@@ -654,13 +658,16 @@ def parse_axis(value) -> list:
         tokens = [str(v) for v in value]
     else:
         tokens = re.findall(r"-?\d+(?:\.\d+)?", str(value))
-    out = []
+    seen, ordered = set(), []
     for tk in tokens:
         try:
-            out.append(float(tk))
+            v = round(float(tk), 4)
         except (TypeError, ValueError):
             continue
-    return sorted({round(v, 4) for v in out})
+        if v not in seen:
+            seen.add(v)
+            ordered.append(v)
+    return ordered
 
 
 def clean_ve_axes(axes) -> dict | None:
@@ -668,11 +675,9 @@ def clean_ve_axes(axes) -> dict | None:
     or None if either axis is unusable (need >=2 breakpoints each)."""
     if not axes:
         return None
-    rpm = parse_axis(axes.get("rpm"))
-    mp = parse_axis(axes.get("map"))
     # sanity bounds: drop obviously-bogus values so a stray paste can't poison it
-    rpm = [v for v in rpm if 0 <= v <= 20000]
-    mp = [v for v in mp if 0 <= v <= 400]
+    rpm = [v for v in parse_axis(axes.get("rpm")) if 0 <= v <= 20000]
+    mp = [v for v in parse_axis(axes.get("map")) if 0 <= v <= 400]
     if len(rpm) < 2 or len(mp) < 2:
         return None
     return {"rpm": rpm, "map": mp}
@@ -680,23 +685,31 @@ def clean_ve_axes(axes) -> dict | None:
 
 def _axis_edges(bps: list) -> list:
     """Breakpoints -> pd.cut edges that snap each sample to its NEAREST breakpoint
-    (midpoints between values; open-ended so nothing falls outside)."""
+    (midpoints between values; open-ended so nothing falls outside). Sorts first,
+    since pd.cut needs monotonic edges -- the user's display order is restored
+    afterward in _relabel_to_breakpoints."""
     import numpy as _np
-    mids = [(bps[i] + bps[i + 1]) / 2.0 for i in range(len(bps) - 1)]
+    s = sorted(set(bps))
+    mids = [(s[i] + s[i + 1]) / 2.0 for i in range(len(s) - 1)]
     return [-_np.inf] + mids + [_np.inf]
 
 
 def _relabel_to_breakpoints(result, rpm: list, mp: list) -> None:
-    """Rename a Result's grids from interval bins to the real breakpoint values
-    (RPM rows, MAP columns) so labels/TSV read as the user's table cells."""
-    grids = ["correction", "samples", "confidence", "recommendation", "wb_dev"]
-    for name in grids:
+    """Relabel a Result's grids from ascending interval bins to the real
+    breakpoint values, then REORDER rows/cols to the user's pasted order (RPM
+    rows, MAP columns) so labels + TSV read exactly like the cells in their
+    table -- including Holley's descending MAP axis."""
+    rpm_sorted, map_sorted = sorted(set(rpm)), sorted(set(mp))
+    for name in ("correction", "samples", "confidence", "recommendation", "wb_dev"):
         g = getattr(result, name, None)
         if g is None or getattr(g, "empty", True):
             continue
-        if len(g.index) == len(rpm) and len(g.columns) == len(mp):
-            g.index = pd.Index(rpm, name="rpm")
-            g.columns = pd.Index(mp, name="map")
+        if len(g.index) == len(rpm_sorted) and len(g.columns) == len(map_sorted):
+            g = g.copy()
+            g.index = pd.Index(rpm_sorted, name="rpm")     # ascending bins -> values
+            g.columns = pd.Index(map_sorted, name="map")
+            g = g.reindex(index=rpm, columns=mp)           # -> user's display order
+            setattr(result, name, g)
 
 
 def build_timeseries(df, col, max_points: int = 1500, stoich: float = 14.7) -> dict | None:

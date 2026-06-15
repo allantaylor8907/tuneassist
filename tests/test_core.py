@@ -445,7 +445,8 @@ MAP_BP = [15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85,
 def test_parse_and_clean_axes():
     from tuneassist.core import parse_axis, clean_ve_axes
     assert parse_axis("400, 800,1200\t1600 2000") == [400, 800, 1200, 1600, 2000]
-    assert parse_axis([20, 20, 40, 30]) == [20, 30, 40]          # sorted + deduped
+    assert parse_axis([20, 20, 40, 30]) == [20, 40, 30]          # order kept, deduped
+    assert parse_axis([105, 103, 101, 20]) == [105, 103, 101, 20]  # descending kept
     assert clean_ve_axes({"rpm": "400 800 1200", "map": "20,40,60"}) == \
         {"rpm": [400, 800, 1200], "map": [20, 40, 60]}
     assert clean_ve_axes({"rpm": "400", "map": "20,40"}) is None  # need >=2 per axis
@@ -494,6 +495,25 @@ def test_custom_ve_axes_resamples_to_table_and_transposes_tsv():
     rows = core.correction_tsv(cr).split("\n")
     assert len(rows) == 19                       # one row per MAP breakpoint
     assert all(len(r.split("\t")) == 20 for r in rows)   # one col per RPM breakpoint
+
+
+def test_holley_descending_nonuniform_map_axis_is_preserved():
+    # Holley Sniper lists MAP descending + non-uniform (210,158,105,103,...,20).
+    # The grid/TSV must mirror that exact order so a paste isn't flipped.
+    import tempfile
+    from tuneassist import core
+    hol_map = [105, 103, 101, 99, 97, 95, 90, 85, 80, 75, 70, 60, 50, 40, 30, 20]
+    rpm = [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 5000, 6000, 7000, 8000]
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "log.csv")
+        _synthetic_gm_log(p)
+        cr = analyze_log(p, _opts(ve_axes={"rpm": rpm, "map": hol_map}), out_dir=None)
+    # columns preserve the descending, non-uniform paste order exactly
+    assert cr.result.correction.columns.tolist() == [float(x) for x in hol_map]
+    assert cr.result.correction.index.tolist() == [float(x) for x in rpm]
+    # TSV is MAP-rows x RPM-cols; first row is the FIRST pasted MAP (105), last is 20
+    rows = core.correction_tsv(cr).split("\n")
+    assert len(rows) == len(hol_map) and len(rows[0].split("\t")) == len(rpm)
 
 
 def test_no_axes_keeps_default_interval_bins():
