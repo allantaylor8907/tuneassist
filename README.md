@@ -26,24 +26,30 @@ your machine. No internet access required so you can tune on the street.
 ---
 
 ## What it looks like
-Add your vehicle to the garage for stored state or do a quick scan. 
-Pick your build out of the garage, fill in the hardware once, and it remembers
-everything between sessions:
+
+It's a desktop app (dark by default). Add a vehicle to the **garage** so it
+remembers your hardware and where you are in the tune — or hit **Quick scan** for
+a one-off. New to this? **Guided setup** walks you through your first car and how
+to capture your first log.
 
 <p align="center">
-  <img src="docs/images/01-garage.svg" width="49%" alt="Garage — your vehicles, remembered between sessions">
-  <img src="docs/images/02-setup.svg" width="49%" alt="Setup — engine preset, bolt-ons, cam tier">
+  <img src="docs/images/garage.png" width="49%" alt="Garage — your builds, remembered between sessions, each with an Edit button and journey progress">
+  <img src="docs/images/setup-axes.png" width="49%" alt="Setup — paste your VE/spark table with Copy with Axis so the correction matches it cell-for-cell">
 </p>
-In HPTuners or Holley - open your log file, export it (as CSV but this usually happens by default)
-Open Tuneassist and point it at a CSV log and it lays out the whole picture — where you are in the tune,
-what's wrong in plain English, the fuel/VE correction, and the single next move:
 
-<p align="center"><img src="docs/images/04-report.svg" width="100%" alt="Analysis report — journey, diagnosis, correction, next step"></p>
+**Set your tables once.** Your VE (and spark) tables rarely use the same
+breakpoints as anyone else's, so in VCM Editor you just right-click the table →
+**Copy with Axis** and paste the whole thing in. tuneassist reads your RPM and
+MAP breakpoints automatically (Holley's descending axis included) so the
+correction grid — and the TSV you copy back out — line up with **your** table,
+cell for cell.
 
-The correction comes as the actual RPM × MAP grid you paste into your VE/fuel
-table — sortable, with per-cell detail:
+Then drag a log onto the window. It lays out the whole picture — where you are in
+the tune, what's wrong in plain English, the VE/fuel correction matched to your
+table, knock-governed spark changes, and a log timeline that **shades where the
+engine ran dangerously lean under load or way too rich**:
 
-<p align="center"><img src="docs/images/05-correction-grid.svg" width="100%" alt="Correction grid — RPM by MAP, the table you paste in"></p>
+<p align="center"><img src="docs/images/report.png" width="100%" alt="Report — verdict and next move, plain-English findings, the VE heatmap matched to your table, spark grid, and the log timeline with lean/rich shading"></p>
 
 ---
 
@@ -58,7 +64,7 @@ OS from the [Releases page](https://github.com/allantaylor8907/tuneassist/releas
 | macOS | `tuneassist-macos-arm64` | `chmod +x tuneassist-macos-arm64 && ./tuneassist-macos-arm64` |
 | Linux | `tuneassist-linux-x64` | `chmod +x tuneassist-linux-x64 && ./tuneassist-linux-x64` |
 
-Running it with no arguments opens the full UI.
+Running it with no arguments opens the desktop app.
 
 **First-run warnings (it's not signed — yet).** The binaries aren't code-signed,
 so your OS will throw a scary-but-harmless warning the first time:
@@ -108,21 +114,26 @@ guessing a column on a fuel calc is how you lean a motor out. CSV only.
     tuneassist            # no arguments -> the desktop GUI  (same as --gui)
 
 Double-click and it opens as a desktop app (dark theme by default — there's a
-light mode too). A **garage** of your cars, a setup that only offers real
-combinations (HP Tuners → make → generation → engine; Holley → which Holley →
-engine), then **drag a log anywhere on the window** (or Browse) and get the
-journey stepper, the verdict and next move in plain English, findings cards,
-the interactive VE heatmap, the MAF curve, and a zoomable log timeline with
-knock markers. **Quick scan** skips the garage for a one-off look.
+light mode too). A **garage** of your cars (each with an **Edit** button so you
+can tweak a build later), a setup that only offers real combinations (HP Tuners →
+make → generation → engine; Holley → which Holley → engine), then **drag a log
+anywhere on the window** (or Browse) and get the journey stepper, the verdict and
+next move in plain English, findings cards, the interactive VE heatmap, and a
+zoomable log timeline. **Quick scan** skips the garage for a one-off; **Guided
+setup** hand-holds first-timers through capturing a log. A **Beginner / Expert**
+toggle keeps it to the essentials or shows the deeper panels (spark grid, MAF
+curve, timeline).
 
 Prefer the terminal? The classic Textual UI is still there: `tuneassist --tui`.
 
-**Paste straight into your tune.** **Copy for VCM/Holley (TSV)** on the
-correction chart puts the RPM × MAP grid on your clipboard as tab-separated
-values. In **VCM Editor**: select the matching VE/fuel cells → Edit → **Paste
-Special → Multiply by Percentage** (low-confidence cells are 0, so they're left
-alone). **Holley:** paste into the matching Base Fuel cells. There's a **Copy MAF
-row** button for the Airflow-vs-Frequency curve too. (`--batch` writes the same as
+**Match it to your table, then paste straight in.** In your car's setup, paste
+your VE (and spark) table via **Copy with Axis** — now the correction grid is
+binned onto *your* exact breakpoints. **Copy for VCM/Holley (TSV)** puts it on the
+clipboard already laid out like your table (RPM across the top, MAP down the
+side). In **VCM Editor**: click the top-left cell → Edit → **Paste Special →
+Multiply by Percentage** (low-confidence cells are 0, so they're left alone).
+**Holley:** paste into the matching Base Fuel cells. Spark copies the same way but
+with **Paste Special → Add** (degrees, not percent). (`--batch` writes the same as
 `.tsv` files.)
 
 It keeps a garage in `~/.tuneassist/garage.json`. Each car remembers its

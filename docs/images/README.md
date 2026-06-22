@@ -1,45 +1,20 @@
 # UI images
 
-These SVGs are generated headlessly from the Textual UI — no real terminal or
-screen recorder needed. GitHub renders SVG inline, so they stay crisp at any
-zoom and the file sizes are small.
+Screenshots of the v2 **desktop GUI** used by the top-level README.
 
-## Regenerate the screenshots
+The cleanest captures come straight from the real app window on Windows. Run it,
+get to each screen, and grab a screenshot (Win+Shift+S). Save them here with
+these exact names so the README picks them up:
 
-    python tools/capture_screens.py
-
-This drives the app through Textual's pilot harness, analyzes the bundled
-`tests/fixtures/ride42.csv`, and writes:
-
-| file | screen |
+| file | screen to capture |
 |---|---|
-| `01-garage.svg`           | garage (pick / new / quick-scan) |
-| `02-setup.svg`            | setup form (engine preset, mods, cam) |
-| `03-analyze-empty.svg`    | analysis screen before a log is loaded |
-| `04-report.svg`           | full report: journey bar + diagnosis + next step |
-| `05-correction-grid.svg`  | interactive RPM × MAP correction grid |
-| `06-top-cells.svg`        | sortable "top cells" table |
+| `garage.png`     | the garage — a couple of cars (Edit + delete buttons), "New vehicle", "Quick scan" |
+| `setup-axes.png` | a vehicle setup with **Tune table axes** expanded and a table pasted (the green "✓ Read from your table: N RPM × M MAP" showing) |
+| `report.png`     | a full analysis — verdict + next move, findings, the VE heatmap matched to the table, and the log timeline with lean/rich shading (Expert mode) |
 
-The theme shown is the default (**textual-dark**); press **Ctrl+T** in the app
-to try the others. The capture size is set in `tools/capture_screens.py`
-(`SIZE`) — deliberately narrow-and-tall (110×50) so each character renders large
-when GitHub scales the SVG to the README's width.
+Tips for good shots: dark theme (default), window ~1380×900, and analyze a log
+that actually has a correction (e.g. `tests/fixtures/ride42.csv`) so the heatmap
+and timeline are populated.
 
-## Recording an animated GIF
-
-SVG covers static views. For a short demo GIF, record a *live* session locally
-(the pilot harness can't drive a real terminal's redraw timing):
-
-1. Run the app in a terminal sized ~132×44:
-
-       python -m tuneassist.cli --tui
-
-2. Record with a terminal recorder, e.g. [asciinema](https://asciinema.org)
-   plus [agg](https://github.com/asciinema/agg):
-
-       asciinema rec demo.cast       # do a short walkthrough, then exit
-       agg demo.cast demo.gif
-
-   or [termtosvg](https://github.com/nbedos/termtosvg) for an animated SVG.
-
-3. Drop the result here as `demo.gif` and reference it from the top-level README.
+> The old `01-garage.svg` … `06-top-cells.svg` were headless captures of the
+> retired Textual TUI and have been removed.

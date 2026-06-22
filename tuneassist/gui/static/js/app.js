@@ -54,6 +54,9 @@ function setSkill(s) {
   document.body.dataset.skill = s;
   localStorage.setItem("ta-skill", s);
   $("#skill-select").value = s;
+  // expert-only cards (timeline, MAF) get shown/hidden by CSS -> re-init the
+  // charts so the now-visible ones size correctly (ECharts can't size hidden divs)
+  if (S.report) renderCharts();
 }
 setTheme(localStorage.getItem("ta-theme") || "dark");
 setSkill(localStorage.getItem("ta-skill") || "beginner");
@@ -82,9 +85,11 @@ async function loadGarage() {
     const idx = (S.presets ? S.presets._stageIndex[v.stage] : 0) || 0;
     const card = document.createElement("div");
     card.className = "card vcard";
+    const axN = v.ve_axes && v.ve_axes.rpm && v.ve_axes.map
+      ? `${v.ve_axes.rpm.length}×${v.ve_axes.map.length}` : null;
     card.innerHTML = `
       <div class="rowx">
-        <button title="Rename" data-act="rename">&#x270E;</button>
+        <button title="Edit settings" data-act="edit">&#x270E;</button>
         <button title="Delete" data-act="del">&#x1F5D1;</button>
       </div>
       <p class="nick">${esc(v.nickname || v.name)}</p>
@@ -93,13 +98,14 @@ async function loadGarage() {
         <span class="chip accent">${esc(v.platform_label)}</span>
         ${v.make ? `<span class="chip">${esc(v.make.toUpperCase())}</span>` : ""}
         ${v.architecture ? `<span class="chip">${esc(archLabel(v.architecture))}</span>` : ""}
+        ${axN ? `<span class="chip" title="Your VE table axes are set">VE ${axN}</span>` : ""}
       </div>
       <div class="stagebar"><div style="width:${Math.round(100 * (idx + 1) / STAGES)}%"></div></div>
       <div class="stage-label">${v.stage ? "Journey: " + esc(stageTitle(v.stage)) : "Not analyzed yet"}</div>`;
     card.onclick = (e) => {
       const act = e.target.dataset && e.target.dataset.act;
       if (act === "del") return delVehicle(v);
-      if (act === "rename") return renameVehicle(v);
+      if (act === "edit") return openSetup(v);
       openVehicle(v);
     };
     grid.appendChild(card);
@@ -131,12 +137,6 @@ function archLabel(key) {
 async function delVehicle(v) {
   if (!confirm(`Delete '${v.nickname || v.name}' permanently?`)) return;
   await api("api/garage/delete", { body: { name: v.name } });
-  loadGarage();
-}
-async function renameVehicle(v) {
-  const nick = prompt(`Nickname for '${v.name}':`, v.nickname || "");
-  if (nick === null) return;
-  await api("api/garage/rename", { body: { name: v.name, nickname: nick } });
   loadGarage();
 }
 function openVehicle(v) { S.current = v; enterAnalyze(); }
@@ -319,20 +319,60 @@ $("#s-product").addEventListener("change", () => cascade("product"));
 $("#s-make").addEventListener("change", () => cascade("make"));
 $("#s-arch").addEventListener("change", () => cascade("arch"));
 
+function setSel(sel, val) {        // set a <select> only if that option exists
+  if (val == null) return false;
+  const el = $(sel);
+  if ([...el.options].some(o => o.value === String(val))) { el.value = String(val); return true; }
+  return false;
+}
+
 function openSetup(vehicle) {
+  const p = S.presets;
   $("#setup-title").textContent = vehicle ? `Edit ${vehicle.nickname || vehicle.name}` : "New vehicle";
   $("#s-name").value = vehicle ? vehicle.name : "";
   $("#s-nick").value = (vehicle && vehicle.nickname) || "";
-  // prefill the custom VE axes (stored as arrays) when editing; the whole-table
-  // paste box is an input convenience, so start it empty and show the saved
-  // breakpoints in the manual fields.
+
+  // platform -> cascade fills product / make / generation / engine + show/hide
+  setSel("#s-platform", (vehicle && vehicle.platform) || "gm");
+  cascade("platform");
+  const holley = !!p.fitment[$("#s-platform").value].products;
+
+  if (vehicle) {                  // editing: restore the whole setup
+    if (holley) setSel("#s-product", vehicle.architecture);
+    setSel("#s-make", vehicle.make || "");
+    cascade("make");
+    if (!holley) { setSel("#s-arch", vehicle.architecture || "auto"); cascade("arch"); }
+    if (vehicle.profile && vehicle.profile.engine) setSel("#s-engine", vehicle.profile.engine);
+    const fi = p.fuels.findIndex(f => Math.abs(f.stoich - (vehicle.stoich || 14.7)) < 0.05);
+    if (fi >= 0) $("#s-fuel").value = String(fi);
+    const ai = p.airflows.findIndex(a => a.mode === (vehicle.airflow_mode || "ve_sd"));
+    if (ai >= 0) $("#s-airflow").value = String(ai);
+    setSel("#s-cam", vehicle.cam_tier || "stock");
+    $("#s-spark").checked = !!vehicle.tune_spark;
+    $("#s-power").checked = !!vehicle.find_power;
+    const mods = (vehicle.profile && vehicle.profile.mods) || [];
+    $$("#s-mods .modchip").forEach(c => c.classList.toggle("on", mods.includes(c.textContent)));
+  } else {                        // new: clear the optional bits to defaults
+    $("#s-fuel").selectedIndex = 0; $("#s-airflow").selectedIndex = 0;
+    $("#s-cam").selectedIndex = 0; $("#s-spark").checked = false; $("#s-power").checked = false;
+    $$("#s-mods .modchip").forEach(c => c.classList.remove("on"));
+  }
+
+  // custom VE axes (stored as arrays) -> manual fields; the table paste box is
+  // an input convenience, so it always starts empty.
   const ax = (vehicle && vehicle.ve_axes) || null;
   $("#s-axis-table").value = "";
   $("#s-axis-rpm").value = ax && ax.rpm ? ax.rpm.join(", ") : "";
   $("#s-axis-map").value = ax && ax.map ? ax.map.join(", ") : "";
-  $("#axes-adv").open = !!ax;
   $("#axes-manual").open = !!ax;
+  const sax = (vehicle && vehicle.spark_axes) || null;
+  $("#s-spark-axis-table").value = "";
+  $("#s-spark-axis-rpm").value = sax && sax.rpm ? sax.rpm.join(", ") : "";
+  $("#s-spark-axis-map").value = sax && sax.map ? sax.map.join(", ") : "";
+  $("#spark-axes-manual").open = !!sax;
+  $("#axes-adv").open = !!(ax || sax);
   updateAxesStatus();
+
   $("#setup-onboard").classList.toggle("hidden", !S.onboarding);
   $("#setup-save").textContent = S.onboarding ? "Next: how to grab a log →" : "Save & continue";
   show("setup");
@@ -369,15 +409,16 @@ function collectSetup() {
     cam_tier: $("#s-cam").value,
     tune_spark: $("#s-spark").checked,
     find_power: $("#s-power").checked,
-    ve_axes: veAxesFromForm(),
+    ve_axes: axesFromForm("#s-axis-table", "#s-axis-rpm", "#s-axis-map"),
+    spark_axes: axesFromForm("#s-spark-axis-table", "#s-spark-axis-rpm", "#s-spark-axis-map"),
   };
 }
 
-/* the axes the form is offering: prefer a whole-table paste, else manual boxes */
-function veAxesFromForm() {
-  const table = $("#s-axis-table").value.trim();
+/* the axes a group is offering: prefer a whole-table paste, else manual boxes */
+function axesFromForm(tableSel, rpmSel, mapSel) {
+  const table = $(tableSel).value.trim();
   if (table) return { table };
-  return { rpm: $("#s-axis-rpm").value, map: $("#s-axis-map").value };
+  return { rpm: $(rpmSel).value, map: $(mapSel).value };
 }
 
 /* parse a pasted axis (commas/spaces/tabs/newlines), order PRESERVED + deduped */
@@ -402,19 +443,20 @@ function parseVeTable(text) {
   if (!rpm || rpm.length < 2 || map.length < 2) return null;
   return { rpm, map };
 }
-function updateAxesStatus() {
-  const el = $("#axes-status");
-  const table = $("#s-axis-table").value.trim();
+function updateAxesGroup(tableSel, rpmSel, mapSel, statusSel) {
+  const el = $(statusSel);
+  const table = $(tableSel).value.trim();
   let r, m, fromTable = false;
   if (table) {
     const p = parseVeTable(table);
     if (!p) {
-      el.textContent = "Couldn't read that as a table — use Copy with Axis (RPM across the top, MAP down the side), or enter the breakpoints manually below.";
+      el.textContent = "Couldn't read that as a table — use Copy with Axis (RPM across the top, " +
+        "values down the side), or enter the breakpoints manually below.";
       el.className = "axes-status warn"; return;
     }
     r = p.rpm; m = p.map; fromTable = true;
   } else {
-    r = parseAxis($("#s-axis-rpm").value); m = parseAxis($("#s-axis-map").value);
+    r = parseAxis($(rpmSel).value); m = parseAxis($(mapSel).value);
   }
   if (!r.length && !m.length) { el.textContent = ""; el.className = "axes-status"; return; }
   if (r.length < 2 || m.length < 2) {
@@ -425,7 +467,12 @@ function updateAxesStatus() {
     `= ${r.length * m.length} cells — the grid and copied TSV will match your table.`;
   el.className = "axes-status ok";
 }
-["#s-axis-table", "#s-axis-rpm", "#s-axis-map"].forEach(s =>
+function updateAxesStatus() {
+  updateAxesGroup("#s-axis-table", "#s-axis-rpm", "#s-axis-map", "#axes-status");
+  updateAxesGroup("#s-spark-axis-table", "#s-spark-axis-rpm", "#s-spark-axis-map", "#spark-axes-status");
+}
+["#s-axis-table", "#s-axis-rpm", "#s-axis-map",
+ "#s-spark-axis-table", "#s-spark-axis-rpm", "#s-spark-axis-map"].forEach(s =>
   $(s).addEventListener("input", updateAxesStatus));
 
 /* ---------- analyze ---------- */
@@ -453,7 +500,8 @@ function analyzeOpts() {
     tune_spark: v.tune_spark !== false,        // spark insight on by default in GUI
     find_power: !!v.find_power,
     mods: (v.profile && v.profile.mods) || [],
-    ve_axes: v.ve_axes || null,                // bin the grid to this car's table
+    ve_axes: v.ve_axes || null,                // bin the grids to this car's tables
+    spark_axes: v.spark_axes || null,
   };
 }
 
@@ -635,9 +683,32 @@ function buildChartShells(d) {
       </details>
     </div>`;
   }
+  if (d.spark && d.spark.can_run && d.spark.cells && d.spark.cells.length) {
+    const axN = d.spark_axes ? `${d.spark_axes.rpm.length}×${d.spark_axes.map.length}` : null;
+    const sub = axN ? `degrees to add (+) / pull (−) — matched to your spark table (${axN})`
+                    : `degrees to add (+) / pull (−) per RPM × MAP cell`;
+    html += `
+    <div class="chart-card expert-only">
+      <div class="ch-head">
+        <h3>Spark / timing change</h3><span class="ch-sub">${sub}</span>
+        <div class="ch-actions">
+          ${d.tsv && d.tsv.spark ? `<button id="copy-spark-tsv">Copy spark (TSV)</button>` : ""}
+        </div>
+      </div>
+      <div id="spark-heatmap" class="chart-box"></div>
+      ${d.spark.advisory ? `<p class="sub spark-advisory">${esc(d.spark.advisory)}</p>` : ""}
+      <details class="why expander"><summary>What am I looking at?</summary>
+        <div class="why-body">Knock-governed timing moves per cell. <strong>Red = pull timing</strong>
+        (the engine knocked there — the pull includes a safety margin); <strong>green = room to add</strong>
+        (only shown if you enabled "find power"). A cell tagged LEAN or HOT means fix fueling or charge
+        temp <em>before</em> touching timing. Paste into your spark table with Paste Special →
+        <strong>Add</strong> (these are degrees, not a percentage).</div>
+      </details>
+    </div>`;
+  }
   if (d.maf && d.maf.cells && d.maf.cells.length) {
     html += `
-    <div class="chart-card">
+    <div class="chart-card expert-only">
       <div class="ch-head"><h3>MAF curve correction</h3>
         <span class="ch-sub">one row, frequency (Hz) across — matches 'Airflow vs Frequency'</span>
         <div class="ch-actions">
@@ -661,7 +732,7 @@ function buildChartShells(d) {
         ${hasRich ? `<span class="bl rich"><i></i>too rich</span>` : ""}
       </div>` : "";
     html += `
-    <div class="chart-card">
+    <div class="chart-card expert-only">
       <div class="ch-head"><h3>Log timeline</h3>
         <span class="ch-sub">when things happened — drag to zoom, hover for point-in-time readouts</span>
         ${legend}</div>
@@ -677,6 +748,13 @@ function buildChartShells(d) {
       </details>
     </div>`;
   }
+  const hasExpert = (d.timeseries && d.timeseries.t && d.timeseries.t.length) ||
+                    (d.maf && d.maf.cells && d.maf.cells.length);
+  if (hasExpert) {
+    html += `<div class="beginner-only expert-hint">Showing the essentials —
+      <a id="to-expert">switch to Expert mode</a> for the log timeline${
+        d.maf && d.maf.cells && d.maf.cells.length ? " and MAF curve" : ""} (knock + lean/rich shading).</div>`;
+  }
   return html;
 }
 
@@ -691,6 +769,12 @@ function wireReport(d) {
   const cm = $("#copy-maf-tsv");
   if (cm) cm.onclick = () => copyText(d.tsv.maf,
     "Copied the MAF row. Paste into the MAF calibration (Multiply by Percentage) — not the VE table.");
+  const cs = $("#copy-spark-tsv");
+  if (cs) cs.onclick = () => copyText(d.tsv.spark, d.spark_axes
+    ? "Copied — laid out to match your spark table. In VCM Editor: click the top-left cell → Paste Special → Add (degrees)."
+    : "Copied the spark grid. Paste into your spark table with Paste Special → Add (these are degrees, not %).");
+  const te = $("#to-expert");
+  if (te) te.onclick = () => setSkill("expert");
 }
 async function copyText(text, msg) {
   try { await navigator.clipboard.writeText(text); toast(msg, "ok"); }
@@ -720,6 +804,7 @@ function renderCharts() {
   disposeCharts();
   const d = S.report;
   if ($("#ve-heatmap") && d.correction) S.charts.ve = veHeatmap($("#ve-heatmap"), d);
+  if ($("#spark-heatmap") && d.spark && d.spark.can_run) S.charts.spark = sparkHeatmap($("#spark-heatmap"), d);
   if ($("#maf-chart") && d.maf) S.charts.maf = mafChart($("#maf-chart"), d.maf);
   if ($("#timeline-chart") && d.timeseries) S.charts.tl = timeline($("#timeline-chart"), d.timeseries);
 }
@@ -762,6 +847,41 @@ function veHeatmap(el, d) {
                  : v < -1 ? "ran RICH here — pull fuel" : "on target — leave it";
       return `<b>${rpmL[p.value[1]]} RPM × ${mapL[p.value[0]]} kPa</b><br>` +
              `${v > 0 ? "+" : ""}${v}% · ${n} samples<br><span style="opacity:.75">${verb}</span>`;
+    } },
+    series: [{ type: "heatmap", data, label: { show: showLabels, fontSize: 10,
+      color: C.text, formatter: p => (p.value[2] > 0 ? "+" : "") + p.value[2].toFixed(1) },
+      emphasis: { itemStyle: { shadowBlur: 8, shadowColor: "rgba(0,0,0,.4)" } } }],
+  });
+  return ch;
+}
+
+function sparkHeatmap(el, d) {
+  const C = chartColors();
+  const cells = d.spark.cells;
+  const rpmL = axisSort([...new Set(cells.map(c => c.rpm))]);
+  const mapL = axisSort([...new Set(cells.map(c => c.map))]);
+  const data = cells.map(c => [mapL.indexOf(c.map), rpmL.indexOf(c.rpm), c.deg, c.action || ""]);
+  const lim = Math.max(2, ...cells.map(c => Math.abs(c.deg)));
+  const cellW = (el.clientWidth - 182) / Math.max(1, mapL.length);
+  const showLabels = cellW >= 46;
+  const ch = echarts.init(el, null, { renderer: "canvas" });
+  ch.setOption({
+    animationDuration: 350,
+    grid: { left: 86, right: 96, top: 18, bottom: 44 },
+    xAxis: { type: "category", data: mapL, name: "MAP (kPa)", nameLocation: "middle",
+             nameGap: 30, axisLabel: { color: C.text3 }, nameTextStyle: { color: C.text3 },
+             axisLine: { lineStyle: { color: C.grid } }, splitArea: { show: true } },
+    yAxis: { type: "category", data: rpmL, name: "RPM", axisLabel: { color: C.text3 },
+             nameTextStyle: { color: C.text3 }, axisLine: { lineStyle: { color: C.grid } },
+             splitArea: { show: true } },
+    visualMap: { min: -lim, max: lim, calculable: true, orient: "vertical",
+      right: 6, top: "middle", text: ["add timing", "pull timing"], dimension: 2,
+      textStyle: { color: C.text3, fontSize: 11 },
+      inRange: { color: [C.crit, C.bg2, C.opp] } },
+    tooltip: { confine: true, formatter: p => {
+      const v = p.value[2], act = p.value[3];
+      return `<b>${rpmL[p.value[1]]} RPM × ${mapL[p.value[0]]} kPa</b><br>` +
+             `${v > 0 ? "+" : ""}${v}°${act ? " · " + act : ""}`;
     } },
     series: [{ type: "heatmap", data, label: { show: showLabels, fontSize: 10,
       color: C.text, formatter: p => (p.value[2] > 0 ? "+" : "") + p.value[2].toFixed(1) },
