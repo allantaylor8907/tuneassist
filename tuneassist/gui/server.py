@@ -54,6 +54,9 @@ class GuiState:
         self.last_result: core.CoreResult | None = None
         self.last_log_path: str | None = None
         self.last_opts: core.SessionOpts | None = None
+        # self-update progress, polled by the GUI for a progress bar
+        self.update = {"phase": "idle", "downloaded": 0, "total": 0,
+                       "message": "", "ok": False, "restarting": False}
 
     def save_garage(self):
         try:
@@ -181,8 +184,13 @@ def make_handler(state: GuiState, token: str):
             self._json({"error": str(msg)}, status)
 
         def _body(self) -> bytes:
-            n = int(self.headers.get("Content-Length") or 0)
-            return self.rfile.read(n) if n else b""
+            # read once and cache: a POST body that a handler never reads would
+            # otherwise stay in the socket and corrupt the NEXT request on the
+            # same keep-alive connection ("Unsupported method '{}POST'").
+            if getattr(self, "_cached_body", None) is None:
+                n = int(self.headers.get("Content-Length") or 0)
+                self._cached_body = self.rfile.read(n) if n else b""
+            return self._cached_body
 
         def _payload(self) -> dict:
             try:
@@ -252,6 +260,7 @@ def make_handler(state: GuiState, token: str):
             path = self._route()
             if path is None:
                 return self._error("forbidden", 403)
+            self._body()                     # always drain the request body
             try:
                 return self._api_post(path)
             except Exception as e:           # surface analysis errors to the UI
@@ -378,9 +387,20 @@ def make_handler(state: GuiState, token: str):
 
             if path == "/api/update/install":
                 from .. import update
-                ok, msg = update.self_update()
-                return self._json({"ok": ok, "message": msg,
-                                   "restarting": ok and update.is_frozen()})
+                if not update.is_frozen():
+                    # source/pip install: no in-place swap; return the guidance.
+                    ok, msg = update.self_update()
+                    return self._json({"ok": ok, "message": msg, "frozen": False})
+                if state.update.get("phase") in ("downloading", "applying"):
+                    return self._json({"ok": True, "started": True, "frozen": True})
+                state.update = {"phase": "downloading", "downloaded": 0, "total": 0,
+                                "message": "Starting…", "ok": False, "restarting": False}
+                threading.Thread(target=_run_update_worker, args=(state,),
+                                 daemon=True).start()
+                return self._json({"ok": True, "started": True, "frozen": True})
+
+            if path == "/api/update/progress":
+                return self._json(dict(state.update))
 
             if path == "/api/submit":
                 from .. import submit
@@ -404,6 +424,41 @@ def _free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
+
+
+def _run_update_worker(state: GuiState):
+    """Download (with progress) then apply the update, recording phase/progress on
+    state.update so the GUI can poll a bar. On a successful frozen apply, exit
+    shortly after so the binary unlocks and the handoff swaps it + relaunches."""
+    from .. import update
+    u = state.update
+    try:
+        info = update.check_for_update()
+        if info is None:
+            u.update(phase="error", message="No newer version found.")
+            return
+        u.update(phase="downloading", message="Downloading…", downloaded=0, total=0)
+
+        def prog(done, total):
+            u["downloaded"] = done
+            u["total"] = total
+        ok, msg, new = update.download_asset(info, progress=prog)
+        if not ok:
+            u.update(phase="error", message=msg, ok=False)
+            return
+        u.update(phase="applying", message=f"Installing v{info.latest}…")
+        ok, msg = update.apply_update(info, new)
+        win = sys.platform.startswith("win")
+        u.update(phase="done" if ok else "error", message=msg, ok=ok,
+                 restarting=bool(ok and update.is_frozen()))
+        if ok and update.is_frozen():
+            # let the final progress poll land, then exit: this releases the file
+            # lock so the (already-waiting) handoff can swap the binary and
+            # relaunch it. POSIX relaunch() starts the new build before exiting.
+            time.sleep(1.5)
+            update.relaunch()
+    except Exception as e:                       # pragma: no cover - defensive
+        u.update(phase="error", message=f"{type(e).__name__}: {e}", ok=False)
 
 
 def start_server(garage_path: str | None = None):

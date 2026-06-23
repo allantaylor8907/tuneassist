@@ -308,6 +308,15 @@ details.why .why-body { color: var(--text-2); font-size: 13.5px; background: var
 .settings-cards h3 { margin: 0 0 6px; }
 .settings-cards button { margin-top: 10px; margin-right: 8px; }
 
+/* update progress bar */
+.updbar { height: 8px; max-width: 320px; background: var(--bg-3); border-radius: 5px;
+  overflow: hidden; margin: 4px 0 2px; }
+#upd-fill { height: 100%; width: 0; border-radius: 5px;
+  background: linear-gradient(90deg, var(--accent), #7c4ddc); transition: width .25s ease; }
+.updbar.indet #upd-fill { width: 40%; animation: indet 1.1s ease-in-out infinite; }
+@keyframes indet { 0% { margin-left: -42%; } 100% { margin-left: 100%; } }
+@media (prefers-reduced-motion: reduce) { .updbar.indet #upd-fill { animation: none; width: 100%; } }
+
 /* beginner/expert disclosure */
 body[data-skill="beginner"] .expert-only { display: none; }
 body[data-skill="expert"] .beginner-only { display: none; }

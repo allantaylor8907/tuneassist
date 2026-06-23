@@ -107,6 +107,21 @@ def test_ve_axes_round_trip_through_gui():
             httpd.shutdown()
 
 
+def test_update_endpoints_non_frozen():
+    # in tests we're not a frozen binary -> install returns guidance, no worker;
+    # the progress endpoint always answers with a phase the GUI can render.
+    with tempfile.TemporaryDirectory() as d:
+        httpd, url, state = start_server(os.path.join(d, "g.json"))
+        try:
+            get, post = _client(url)
+            inst = post("api/update/install", {})
+            assert inst["frozen"] is False and inst["message"]
+            prog = post("api/update/progress", {})
+            assert prog["phase"] == "idle" and "downloaded" in prog and "total" in prog
+        finally:
+            httpd.shutdown()
+
+
 def test_bad_token_is_rejected():
     with tempfile.TemporaryDirectory() as d:
         httpd, url, state = start_server(os.path.join(d, "g.json"))

@@ -184,17 +184,27 @@ def cleanup_old_binary() -> None:
                 pass
 
 
-def _download(url: str, dest: str) -> bool:
+def _download(url: str, dest: str, progress=None) -> bool:
+    """Stream `url` to `dest`. `progress(done_bytes, total_bytes)` is called as it
+    goes (total is 0 if the server doesn't send Content-Length) so a UI can show a
+    bar. Fail-silent: any error removes the partial file and returns False."""
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "tuneassist"})
         ctx = ssl.create_default_context()
         with urllib.request.urlopen(req, timeout=60, context=ctx) as r, \
                 open(dest, "wb") as f:
+            total = int(r.headers.get("Content-Length") or 0)
+            done = 0
+            if progress:
+                progress(0, total)
             while True:
                 chunk = r.read(65536)
                 if not chunk:
                     break
                 f.write(chunk)
+                done += len(chunk)
+                if progress:
+                    progress(done, total)
         return True
     except Exception:
         try:
@@ -202,6 +212,46 @@ def _download(url: str, dest: str) -> bool:
         except Exception:
             pass
         return False
+
+
+def download_asset(info: "UpdateInfo", progress=None) -> tuple[bool, str, str | None]:
+    """Frozen-only: download the matching binary to '<exe>.new' (reporting
+    progress), validating it's a real (multi-MB) file. Returns (ok, msg, path)."""
+    if not is_frozen():
+        return (False, "Not a packaged binary.", None)
+    if info is None or not info.asset_url:
+        return (False, "No binary for this OS in the latest release.", None)
+    new = sys.executable + ".new"
+    if not _download(info.asset_url, new, progress) or not os.path.exists(new) \
+            or os.path.getsize(new) < 1_000_000:
+        # a real binary is tens of MB; a tiny/missing file means the download was
+        # blocked or truncated (often antivirus on an unsigned exe).
+        try:
+            os.remove(new)
+        except Exception:
+            pass
+        return (False, "The download didn't complete -- antivirus may have blocked the "
+                f"unsigned file. Get it manually: {info.page_url}", None)
+    return (True, "Downloaded.", new)
+
+
+def apply_update(info: "UpdateInfo", new: str) -> tuple[bool, str]:
+    """Swap a freshly-downloaded '<exe>.new' into place. On Windows this hands off
+    to a detached script (the caller must then exit so the file unlocks); on POSIX
+    it's an atomic in-place replace. Returns (ok, message)."""
+    exe = sys.executable
+    try:
+        if sys.platform.startswith("win"):
+            return _windows_handoff(exe, new, info)
+        os.chmod(new, 0o755)
+        os.replace(new, exe)            # atomic on POSIX; running process keeps its inode
+    except Exception as e:
+        try:
+            os.remove(new)
+        except Exception:
+            pass
+        return (False, f"Could not install the update ({e}). Get it manually: {info.page_url}")
+    return (True, f"Updated to v{info.latest}. Restart tuneassist to run the new version.")
 
 
 def self_update(info: UpdateInfo | None = None) -> tuple[bool, str]:
@@ -219,37 +269,14 @@ def self_update(info: UpdateInfo | None = None) -> tuple[bool, str]:
         return (False,
                 f"v{info.latest} is available but has no binary for this OS.\n"
                 f"Download manually: {info.page_url}")
-
-    exe = sys.executable
-    new = exe + ".new"
-    if not _download(info.asset_url, new) or not os.path.exists(new) \
-            or os.path.getsize(new) < 1_000_000:
-        # a real binary is tens of MB; a tiny/missing file means the download was
-        # blocked or truncated (often antivirus on an unsigned exe).
-        try:
-            os.remove(new)
-        except Exception:
-            pass
-        return (False, "The download didn't complete -- antivirus may have blocked "
-                f"the unsigned file. Get it manually: {info.page_url}")
-
-    try:
-        if sys.platform.startswith("win"):
-            # You can't reliably overwrite a running .exe in-process, so hand off
-            # to a tiny batch script: it waits until we exit (the file unlocks),
-            # swaps the new binary in, and relaunches. The running exe is never
-            # touched by us, so a failure can't brick the install.
-            return _windows_handoff(exe, new, info)
-        os.chmod(new, 0o755)
-        os.replace(new, exe)            # atomic on POSIX; running process keeps its inode
-    except Exception as e:
-        try:
-            os.remove(new)
-        except Exception:
-            pass
-        return (False, f"Could not install the update ({e}). Get it manually: {info.page_url}")
-
-    return (True, f"Updated to v{info.latest}. Restart tuneassist to run the new version.")
+    ok, msg, new = download_asset(info)
+    if not ok:
+        return (False, msg)
+    # You can't reliably overwrite a running .exe in-process, so the Windows path
+    # hands off to a detached script that waits for us to exit, swaps the binary
+    # in, and relaunches -- the running exe is never touched, so a failure can't
+    # brick the install. POSIX replaces in place.
+    return apply_update(info, new)
 
 
 def _ps_quote(p: str) -> str:
