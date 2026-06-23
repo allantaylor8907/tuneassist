@@ -33,8 +33,8 @@ a one-off. New to this? **Guided setup** walks you through your first car and ho
 to capture your first log.
 
 <p align="center">
-  <img src="docs/images/garage.png" width="49%" alt="Garage — your builds, remembered between sessions, each with an Edit button and journey progress">
-  <img src="docs/images/setup-axes.png" width="49%" alt="Setup — paste your VE/spark table with Copy with Axis so the correction matches it cell-for-cell">
+  <img src="docs/images/garage.svg" width="49%" alt="Garage — your builds, remembered between sessions, each with an Edit button and journey progress">
+  <img src="docs/images/setup-axes.svg" width="49%" alt="Setup — paste your VE/spark table with Copy with Axis so the correction matches it cell-for-cell">
 </p>
 
 **Set your tables once.** Your VE (and spark) tables rarely use the same
@@ -49,7 +49,7 @@ the tune, what's wrong in plain English, the VE/fuel correction matched to your
 table, knock-governed spark changes, and a log timeline that **shades where the
 engine ran dangerously lean under load or way too rich**:
 
-<p align="center"><img src="docs/images/report.png" width="100%" alt="Report — verdict and next move, plain-English findings, the VE heatmap matched to your table, spark grid, and the log timeline with lean/rich shading"></p>
+<p align="center"><img src="docs/images/report.svg" width="100%" alt="Report — verdict and next move, plain-English findings, the VE heatmap matched to your table, spark grid, and the log timeline with lean/rich shading"></p>
 
 ---
 
