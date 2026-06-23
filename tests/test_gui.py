@@ -78,6 +78,35 @@ def test_api_end_to_end():
             httpd.shutdown()
 
 
+def test_ve_axes_round_trip_through_gui():
+    # the bug a real user hit: axes saved on upsert but _vehicle_record dropped
+    # them, so the frontend never sent them to analyze and the grid stayed default.
+    with tempfile.TemporaryDirectory() as d:
+        httpd, url, state = start_server(os.path.join(d, "g.json"))
+        try:
+            get, post = _client(url)
+            table = ("%\t400\t800\t1200\t1600\t2000\trpm\n"
+                     "20\t1\t2\t3\t4\t5\n40\t1\t2\t3\t4\t5\n"
+                     "60\t1\t2\t3\t4\t5\n80\t1\t2\t3\t4\t5\nkPa")
+            v = post("api/garage/upsert", {"name": "axc", "platform": "gm",
+                                           "stoich": 14.7, "ve_axes": {"table": table}})
+            # the saved axes MUST come back to the frontend (this was the bug)
+            assert v["vehicle"]["ve_axes"] == {"rpm": [400, 800, 1200, 1600, 2000],
+                                               "map": [20, 40, 60, 80]}
+            assert get("api/garage")["vehicles"][0]["ve_axes"]["rpm"][0] == 400
+            # and analyzing with those axes bins the grid onto them (5 RPM cols)
+            d2 = post("api/analyze", {"path": RIDE, "vehicle": "axc", "stoich": 14.7,
+                                      "ve_axes": {"rpm": [400, 800, 1200, 1600, 2000],
+                                                  "map": [20, 40, 60, 80]}})
+            assert d2["ve_axes"]["rpm"] == [400, 800, 1200, 1600, 2000]
+            rows = d2["tsv"]["correction"].split("\n")
+            assert len(rows) == 4 and len(rows[0].split("\t")) == 5   # MAP rows x RPM cols
+            # analyzing a saved car must NOT wipe its axes from the record
+            assert get("api/garage")["vehicles"][0]["ve_axes"]["map"] == [20, 40, 60, 80]
+        finally:
+            httpd.shutdown()
+
+
 def test_bad_token_is_rejected():
     with tempfile.TemporaryDirectory() as d:
         httpd, url, state = start_server(os.path.join(d, "g.json"))

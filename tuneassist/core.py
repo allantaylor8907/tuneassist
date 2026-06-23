@@ -42,10 +42,12 @@ class SessionOpts:
     # `platform` (tuning software). Auto-derived/detected when left as None.
     make: str | None = None         # 'gm' | 'ford' | 'mopar' ...
     architecture: str | None = None  # 'gm_gen3_4_ls' | 'ford_coyote' ...
-    # The vehicle's REAL VE/base-fuel table breakpoints, so the correction grid
-    # matches the user's table cell-for-cell (his VCM Editor table rarely has the
-    # same axes as our defaults). {"rpm": [...], "map": [...]} or None = defaults.
+    # The vehicle's REAL table breakpoints, so the correction grids match the
+    # user's tables cell-for-cell (their tuning software rarely has the same axes
+    # as our defaults). {"rpm": [...], "map": [...]} or None = defaults. VE and
+    # spark are separate tables with separate axes.
     ve_axes: dict | None = None
+    spark_axes: dict | None = None
 
 
 def opts_to_record(platform: str, opts: "SessionOpts") -> dict:
@@ -61,6 +63,7 @@ def opts_to_record(platform: str, opts: "SessionOpts") -> dict:
         "tune_spark": opts.tune_spark,
         "find_power": opts.find_power,
         "ve_axes": clean_ve_axes(opts.ve_axes),
+        "spark_axes": clean_ve_axes(opts.spark_axes),
         "cam": (None if cam is None else {
             "intake_dur_050": cam.intake_dur_050, "exhaust_dur_050": cam.exhaust_dur_050,
             "lsa": cam.lsa, "lift": cam.lift}),
@@ -85,7 +88,8 @@ def record_to_opts(record: dict):
                        find_power=record.get("find_power", False),
                        make=record.get("make") or d_make,
                        architecture=record.get("architecture") or d_arch,
-                       ve_axes=clean_ve_axes(record.get("ve_axes")))
+                       ve_axes=clean_ve_axes(record.get("ve_axes")),
+                       spark_axes=clean_ve_axes(record.get("spark_axes")))
     cam = record.get("cam")
     if cam:
         opts.cam_spec = cams.CamSpec(**cam)
@@ -452,7 +456,8 @@ class CoreResult:
     findings: list = field(default_factory=list)   # diagnostics.Finding list
     notes: list = field(default_factory=list)
     timeseries: dict | None = None         # downsampled traces (GUI timeline)
-    ve_axes: dict | None = None            # the custom table axes used, if any
+    ve_axes: dict | None = None            # the custom VE table axes used, if any
+    spark_axes: dict | None = None         # the custom spark table axes used, if any
 
     @property
     def has_grid(self) -> bool:
@@ -518,6 +523,7 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
     # so ONLY the fuel correction is rebinned -- spark and MAF have their own,
     # different table axes and must keep the default bins.
     ve_axes = clean_ve_axes(opts.ve_axes)
+    spark_axes = clean_ve_axes(opts.spark_axes)   # spark is its own table/axes
     corr_cfg = cfg
     if ve_axes:
         import copy as _copy
@@ -551,8 +557,21 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
             notes.append(f"Could not analyze: {e}")
         if opts.tune_spark:
             try:
-                spark = analyze_spark(df, cfg, find_power=opts.find_power,
+                spark_cfg = cfg
+                if spark_axes:
+                    import copy as _copy
+                    spark_cfg = _copy.copy(cfg)
+                    spark_cfg.rpm_bins = _axis_edges(spark_axes["rpm"])
+                    spark_cfg.map_bins = _axis_edges(spark_axes["map"])
+                spark = analyze_spark(df, spark_cfg, find_power=opts.find_power,
                                       profile=opts.profile)
+                if spark_axes and spark is not None and spark.can_run:
+                    _relabel_to_breakpoints(spark, spark_axes["rpm"], spark_axes["map"],
+                                            names=("change", "action", "samples"))
+                    notes.append(
+                        f"Spark grid binned to your spark table axes "
+                        f"({len(spark_axes['rpm'])} RPM x {len(spark_axes['map'])} MAP) -- "
+                        "the copied spark TSV lines up cell-for-cell.")
             except Exception as e:   # pragma: no cover - defensive
                 notes.append(f"Spark analysis skipped: {e}")
 
@@ -635,7 +654,7 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
                       make=opts.make, architecture=opts.architecture,
                       result=result, spark=spark, maf=maf, prescription=rx,
                       empty_reason=empty_reason, findings=findings, notes=notes,
-                      timeseries=ts, ve_axes=ve_axes)
+                      timeseries=ts, ve_axes=ve_axes, spark_axes=spark_axes)
 
 
 # --------------------------------------------------------------------------
@@ -742,13 +761,14 @@ def _axis_edges(bps: list) -> list:
     return [-_np.inf] + mids + [_np.inf]
 
 
-def _relabel_to_breakpoints(result, rpm: list, mp: list) -> None:
-    """Relabel a Result's grids from ascending interval bins to the real
+def _relabel_to_breakpoints(result, rpm: list, mp: list, names=(
+        "correction", "samples", "confidence", "recommendation", "wb_dev")) -> None:
+    """Relabel a result's grids from ascending interval bins to the real
     breakpoint values, then REORDER rows/cols to the user's pasted order (RPM
     rows, MAP columns) so labels + TSV read exactly like the cells in their
     table -- including Holley's descending MAP axis."""
     rpm_sorted, map_sorted = sorted(set(rpm)), sorted(set(mp))
-    for name in ("correction", "samples", "confidence", "recommendation", "wb_dev"):
+    for name in names:
         g = getattr(result, name, None)
         if g is None or getattr(g, "empty", True):
             continue
@@ -949,9 +969,14 @@ def maf_tsv(cr) -> str | None:
 
 
 def spark_tsv(cr) -> str | None:
-    """The spark change grid (degrees to add/pull) as TSV -- paste with Add."""
+    """The spark change grid (degrees to add/pull) as TSV -- paste with Add.
+    With custom spark axes, transpose to the spark table's layout (RPM cols x
+    MAP rows) like the VE grid."""
     sp = getattr(cr, "spark", None)
-    return grid_tsv(getattr(sp, "change", None) if sp else None, "raw")
+    grid = getattr(sp, "change", None) if sp else None
+    if grid is not None and getattr(cr, "spark_axes", None) and not getattr(grid, "empty", True):
+        grid = grid.T
+    return grid_tsv(grid, "raw")
 
 
 # --------------------------------------------------------------------------
@@ -1067,7 +1092,9 @@ def result_to_dict(cr: CoreResult) -> dict:
     if cr.timeseries:
         d["timeseries"] = cr.timeseries
     if cr.ve_axes:
-        d["ve_axes"] = cr.ve_axes          # the custom table axes the grid used
+        d["ve_axes"] = cr.ve_axes          # the custom VE table axes the grid used
+    if cr.spark_axes:
+        d["spark_axes"] = cr.spark_axes    # the custom spark table axes used
     tsv = {}
     for name, fn in (("correction", correction_tsv), ("maf", maf_tsv),
                      ("spark", spark_tsv)):

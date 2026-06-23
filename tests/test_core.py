@@ -535,6 +535,30 @@ def test_holley_descending_nonuniform_map_axis_is_preserved():
     assert len(rows) == len(hol_map) and len(rows[0].split("\t")) == len(rpm)
 
 
+def test_custom_spark_axes_are_independent_of_ve_axes():
+    # spark is its own table with its own axes; custom VE axes must not leak into
+    # spark and vice-versa.
+    import tempfile
+    from tuneassist import core
+    spark_rpm = [800, 1600, 2400, 3200, 4000, 4800, 5600, 6400]
+    spark_map = [20, 40, 60, 80, 100]
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "log.csv")
+        _synthetic_gm_log(p)
+        cr = analyze_log(p, _opts(tune_spark=True, find_power=True,
+                                  ve_axes={"rpm": RPM_BP, "map": MAP_BP},
+                                  spark_axes={"rpm": spark_rpm, "map": spark_map}), out_dir=None)
+    assert cr.spark is not None and cr.spark.can_run
+    # each grid is on ITS OWN axes
+    assert cr.result.correction.index.tolist() == [float(x) for x in RPM_BP]
+    assert cr.spark.change.index.tolist() == [float(x) for x in spark_rpm]
+    assert cr.spark.change.columns.tolist() == [float(x) for x in spark_map]
+    dd = cr.to_dict()
+    assert dd["spark_axes"]["rpm"] == [float(x) for x in spark_rpm]
+    rows = core.spark_tsv(cr).split("\n")            # MAP rows x RPM cols, like VE
+    assert len(rows) == len(spark_map) and len(rows[0].split("\t")) == len(spark_rpm)
+
+
 def test_no_axes_keeps_default_interval_bins():
     cr = analyze_log(os.path.join(FIX, "ride42.csv"), _opts(), out_dir=None)
     assert cr.ve_axes is None

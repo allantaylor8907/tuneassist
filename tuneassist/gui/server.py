@@ -74,6 +74,7 @@ def _opts_from_payload(p: dict) -> tuple[str | None, core.SessionOpts]:
         make=p.get("make") or None,
         architecture=p.get("architecture") or None,
         ve_axes=core.clean_ve_axes(p.get("ve_axes")),
+        spark_axes=core.clean_ve_axes(p.get("spark_axes")),
     )
     preset = p.get("engine_preset")
     mods = list(p.get("mods", []) or [])
@@ -120,6 +121,10 @@ def _vehicle_record(state: GuiState, name: str) -> dict | None:
             "tune_spark": rec.get("tune_spark", False),
             "find_power": rec.get("find_power", False),
             "profile": rec.get("profile"), "cam": rec.get("cam"),
+            "cam_tier": rec.get("cam_tier"),
+            # the custom table axes MUST round-trip to the frontend, or the saved
+            # axes never reach analyze and the grid falls back to default bins.
+            "ve_axes": rec.get("ve_axes"), "spark_axes": rec.get("spark_axes"),
             "history": rec.get("history", [])}
 
 
@@ -276,10 +281,11 @@ def make_handler(state: GuiState, token: str):
                 name = p.get("vehicle")
                 if name and garage.get(state.data, name) is not None:
                     import datetime
-                    rec = core.opts_to_record(cr.platform, opts)
-                    keep = garage.get(state.data, name)
-                    rec["nickname"] = keep.get("nickname")
-                    hist = list(keep.get("history", []))
+                    # Merge progress into the EXISTING record -- analyzing a saved
+                    # car must not overwrite its setup (profile/cam/axes) with the
+                    # thin opts the analyze call carries.
+                    rec = dict(garage.get(state.data, name))
+                    hist = list(rec.get("history", []))
                     if cr.has_grid:
                         hist.append([f"pass {len(hist) + 1}",
                                      cr.summary.median_pct, cr.summary.max_abs_pct])
@@ -320,6 +326,7 @@ def make_handler(state: GuiState, token: str):
                 platform, opts = _opts_from_payload(p)
                 rec = core.opts_to_record(platform or "gm", opts)
                 rec["nickname"] = (p.get("nickname") or "").strip() or None
+                rec["cam_tier"] = p.get("cam_tier")     # so Edit can restore it
                 old = garage.get(state.data, name)
                 if old:
                     rec["history"] = old.get("history", [])

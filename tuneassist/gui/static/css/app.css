@@ -131,6 +131,9 @@ input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accen
   border: 1px solid var(--line-2); border-radius: var(--radius-sm); padding: 8px 10px;
   resize: vertical; width: 100%; }
 .axes-body textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.axes-group { padding: 12px 0; }
+.axes-group + .axes-group { border-top: 1px solid var(--line); }
+.axes-group-label { display: block; font-weight: 570; font-size: 13.5px; margin-bottom: 8px; }
 .axes-manual { margin-top: 12px; }
 .axes-manual summary { cursor: pointer; font-size: 12.5px; color: var(--accent); font-weight: 540;
   list-style: none; }
@@ -275,7 +278,8 @@ details.why .why-body { color: var(--text-2); font-size: 13.5px; background: var
 .chart-card .ch-sub { color: var(--text-3); font-size: 12.5px; }
 .chart-card .ch-actions { margin-left: auto; display: flex; gap: 8px; }
 .chart-box { width: 100%; }
-#ve-heatmap { height: 380px; }
+.spark-advisory { font-size: 13px; margin: 8px 0 0; }
+#ve-heatmap, #spark-heatmap { height: 380px; }
 #maf-chart { height: 200px; }
 #timeline-chart { height: 340px; }
 
@@ -306,6 +310,9 @@ details.why .why-body { color: var(--text-2); font-size: 13.5px; background: var
 
 /* beginner/expert disclosure */
 body[data-skill="beginner"] .expert-only { display: none; }
+body[data-skill="expert"] .beginner-only { display: none; }
+.expert-hint { font-size: 13px; color: var(--text-3); text-align: center; padding: 2px 4px; }
+.expert-hint a { color: var(--accent); cursor: pointer; text-decoration: underline; }
 
 /* whole-window drop overlay */
 #drop-overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
