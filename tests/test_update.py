@@ -53,6 +53,44 @@ def test_self_update_refuses_when_not_frozen():
     assert ok is False and ("pipx" in msg or "pip install" in msg)
 
 
+def test_download_asset_refuses_when_not_frozen():
+    ok, msg, path = update.download_asset(
+        update.UpdateInfo("0.1.0", "9.9.9", "url", "http://x/a", "a"))
+    assert ok is False and path is None
+
+
+def test_download_reports_progress_and_total():
+    # serve a few KB over a real loopback HTTP server; _download must stream it and
+    # report monotonic progress with the Content-Length total.
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    payload = b"x" * (130 * 1024)
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    port = httpd.server_address[1]
+    seen = []
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            dest = os.path.join(d, "out.bin")
+            ok = update._download(f"http://127.0.0.1:{port}/x", dest,
+                                  progress=lambda done, total: seen.append((done, total)))
+            assert ok and os.path.getsize(dest) == len(payload)
+    finally:
+        httpd.shutdown()
+    assert seen and seen[-1] == (len(payload), len(payload))
+    assert all(t == len(payload) for _, t in seen)         # total known throughout
+    assert [d for d, _ in seen] == sorted(d for d, _ in seen)  # monotonic
+
+
 def test_passive_check_disabled_by_env():
     os.environ["TUNEASSIST_NO_UPDATE_CHECK"] = "1"
     try:

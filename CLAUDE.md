@@ -116,10 +116,17 @@ tunable state.
   the GitHub Releases API, compares `__version__` to the latest tag, and for the
   frozen PyInstaller binary downloads the OS-matched asset and swaps it in place
   (Windows: rename-running-exe trick + `.old` cleanup next launch; POSIX: atomic
-  rename). `passive_check()` is throttled to once/day (state in
-  `~/.tuneassist/update.json`), disabled by `TUNEASSIST_NO_UPDATE_CHECK=1`/`CI`,
-  and every network path fails silently. pip/pipx installs are pointed at the
-  package manager. Tested (all offline).
+  rename). Split into `download_asset(info, progress)` (streams to `<exe>.new`,
+  reports bytes via callback) + `apply_update(info, new)` (the swap/handoff);
+  `self_update` chains them for the CLI. **The GUI drives these in a background
+  worker** (`server._run_update_worker`): `/api/update/install` starts it,
+  `/api/update/progress` is polled for a bar, and on a successful frozen apply the
+  worker calls `relaunch()` so the **process actually exits** — that's what
+  unlocks the .exe so the Windows handoff can swap + relaunch (the prior hang was
+  the server never exiting, so `Wait-Process` timed out). `passive_check()` is
+  throttled to once/day (state in `~/.tuneassist/update.json`), disabled by
+  `TUNEASSIST_NO_UPDATE_CHECK=1`/`CI`, and every network path fails silently.
+  pip/pipx installs are pointed at the package manager. Tested (all offline).
 - `submit.py` — **opt-in log submission** (off until `SUBMIT_URL` is set, stdlib
   only). After an analysis the TUI ("Share log" button + `s`) offers to
   bundle ONLY the analyzed log + a non-identifying `submission.json` (version,

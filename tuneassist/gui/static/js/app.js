@@ -977,14 +977,76 @@ $("#check-update").onclick = async () => {
     }
   } catch (e) { $("#update-status").textContent = "Check failed: " + e.message; }
 };
+let updPolling = false;
 $("#install-update").onclick = async () => {
-  $("#update-status").textContent = "Downloading…";
+  $("#install-update").disabled = true;
+  $("#update-status").textContent = "Starting…";
   try {
     const d = await api("api/update/install", { body: {} });
-    $("#update-status").textContent = d.message;
-    if (d.restarting) toast("Installing — the app will close and reopen on the new version.", "ok");
-  } catch (e) { $("#update-status").textContent = "Update failed: " + e.message; }
+    if (d.frozen === false) {            // source/pip install: just show guidance
+      $("#update-status").textContent = d.message;
+      $("#install-update").disabled = false;
+      return;
+    }
+    pollUpdate();
+  } catch (e) {
+    $("#update-status").textContent = "Update failed: " + e.message;
+    $("#install-update").disabled = false;
+  }
 };
+
+const _mb = b => (b / 1048576).toFixed(1);
+async function pollUpdate() {
+  if (updPolling) return;
+  updPolling = true;
+  $("#upd-bar").classList.remove("hidden");
+  let reachedWork = false;
+  for (;;) {
+    let p;
+    try {
+      p = await api("api/update/progress", { body: {} });
+    } catch (e) {
+      // the server going away mid-update = the app is exiting to swap + relaunch
+      if (reachedWork) { finishUpdateUI(); }
+      else { $("#update-status").textContent = "Update failed: lost connection."; $("#install-update").disabled = false; }
+      break;
+    }
+    if (p.phase === "downloading" || p.phase === "applying") reachedWork = true;
+    renderUpdateProgress(p);
+    if (p.phase === "done") { finishUpdateUI(); break; }
+    if (p.phase === "error") {
+      $("#upd-bar").classList.add("hidden");
+      $("#install-update").disabled = false;
+      break;
+    }
+    await new Promise(r => setTimeout(r, 400));
+  }
+  updPolling = false;
+}
+function renderUpdateProgress(p) {
+  const bar = $("#upd-bar"), fill = $("#upd-fill");
+  if (p.phase === "downloading") {
+    if (p.total > 0) {
+      const pct = Math.min(100, Math.round(p.downloaded / p.total * 100));
+      bar.classList.remove("indet"); fill.style.width = pct + "%";
+      $("#update-status").textContent = `Downloading ${pct}% — ${_mb(p.downloaded)} / ${_mb(p.total)} MB`;
+    } else {
+      bar.classList.add("indet");
+      $("#update-status").textContent = `Downloading… ${_mb(p.downloaded)} MB`;
+    }
+  } else if (p.phase === "applying") {
+    bar.classList.add("indet");
+    $("#update-status").textContent = p.message || "Installing…";
+  } else if (p.phase === "error") {
+    $("#update-status").textContent = p.message || "Update failed.";
+  }
+}
+function finishUpdateUI() {
+  $("#upd-bar").classList.add("indet");
+  $("#update-status").textContent = "Installed — restarting on the new version. This window will close.";
+  toast("Updating — the app will reopen on the new version.", "ok");
+  setTimeout(() => { try { window.close(); } catch (_) {} }, 5000);
+}
 
 /* ---------- boot ---------- */
 (async function boot() {
