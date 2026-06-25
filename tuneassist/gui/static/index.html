@@ -181,6 +181,9 @@
             <input id="path-input" placeholder="C:\Users\you\Documents\log.csv">
             <button id="analyze-btn">Analyze</button>
           </div>
+          <div class="dz-foot">
+            <button class="linklike" id="channels-btn">&#x1F4CB; Which channels should I log?</button>
+          </div>
         </div>
       </div>
 
@@ -255,6 +258,26 @@
     <div class="dz-icon">&#x1F4C4;</div>
     <div class="dz-title">Drop the log to analyze</div>
     <div class="dz-sub">Exported CSV from VCM Scanner or the Holley software</div>
+  </div>
+</div>
+
+<div id="channels-modal" class="modal-wrap hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Channels to log</h2>
+      <select id="channels-pick" title="Which engine"></select>
+      <button class="ghost modal-x" id="channels-close" title="Close">&#x2715;</button>
+    </div>
+    <p class="sub" id="channels-intro"></p>
+    <div id="channels-list" class="chan-list"></div>
+    <div class="modal-foot">
+      <span class="chan-legend">
+        <span class="chan-tier essential">essential</span>
+        <span class="chan-tier recommended">recommended</span>
+        <span class="chan-tier reference">nice to have</span>
+      </span>
+      <button class="primary" id="channels-copy">Copy list</button>
+    </div>
   </div>
 </div>
 

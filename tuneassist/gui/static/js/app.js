@@ -595,7 +595,7 @@ function showReport(d) {
   renderJourney(d.stage, d.journey);
   const rep = $("#report");
   rep.classList.remove("hidden");
-  rep.innerHTML = buildVerdict(d) + buildFindings(d) + buildChartShells(d);
+  rep.innerHTML = buildVerdict(d) + buildCoverage(d) + buildFindings(d) + buildChartShells(d);
   wireReport(d);
   renderCharts();
   rep.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -775,6 +775,8 @@ function wireReport(d) {
     : "Copied the spark grid. Paste into your spark table with Paste Special → Add (these are degrees, not %).");
   const te = $("#to-expert");
   if (te) te.onclick = () => setSkill("expert");
+  const cr = $("#cov-ref-btn");
+  if (cr) cr.onclick = openChannelsModal;
 }
 async function copyText(text, msg) {
   try { await navigator.clipboard.writeText(text); toast(msg, "ok"); }
@@ -1046,6 +1048,63 @@ function finishUpdateUI() {
   $("#update-status").textContent = "Installed — restarting on the new version. This window will close.";
   toast("Updating — the app will reopen on the new version.", "ok");
   setTimeout(() => { try { window.close(); } catch (_) {} }, 5000);
+}
+
+/* ---------- channels-to-log popout ---------- */
+function channelsKeyFor(v) {
+  v = v || {};
+  if (v.platform === "holley") return "holley";
+  const a = v.architecture || "";
+  if (a.includes("gen3")) return "gm_gen3_ls";
+  if (a.includes("gen5")) return "gm_gen5_lt";
+  return "gm_gen4_ls";                       // HP Tuners default
+}
+function renderChannelsList(key) {
+  const ch = S.presets && S.presets.channels && S.presets.channels[key];
+  if (!ch) return;
+  const holley = key === "holley";
+  $("#channels-intro").textContent = holley
+    ? "Holley records these by default — just confirm they're in your datalog, then export to CSV."
+    : "In VCM Scanner, add these to your channel list (Add Channels), save it as a layout, then Scan → Export Data → CSV.";
+  $("#channels-list").innerHTML = ch.channels.map(c =>
+    `<div class="chan-row"><span class="chan-name">${esc(c.name)}</span>` +
+    `<span class="chan-tier ${c.tier}">${c.tier === "reference" ? "nice to have" : c.tier}</span></div>`).join("");
+  $("#channels-pick").value = key;
+}
+function openChannelsModal() {
+  if (!S.presets || !S.presets.channels) return;
+  const sel = $("#channels-pick");
+  if (!sel.options.length) {
+    fill(sel, Object.entries(S.presets.channels).map(([k, v]) => [k, v.label]));
+  }
+  renderChannelsList(channelsKeyFor(S.current));
+  $("#channels-modal").classList.remove("hidden");
+}
+$("#channels-btn").onclick = openChannelsModal;
+$("#channels-close").onclick = () => $("#channels-modal").classList.add("hidden");
+$("#channels-modal").onclick = (e) => { if (e.target.id === "channels-modal") $("#channels-modal").classList.add("hidden"); };
+$("#channels-pick").onchange = e => renderChannelsList(e.target.value);
+$("#channels-copy").onclick = () => {
+  const key = $("#channels-pick").value;
+  const ch = S.presets.channels[key];
+  copyText(ch.channels.map(c => c.name).join("\n"), "Copied the channel list — paste it somewhere handy while you set up your scan.");
+};
+
+function buildCoverage(d) {
+  const cov = d.channel_coverage;
+  if (!cov) return "";
+  if (!cov.missing || !cov.missing.length) {
+    return `<div class="coverage ok"><span class="cov-ico">✓</span>
+      <span>All key channels were logged (${cov.n_present}). Good data to tune on.</span></div>`;
+  }
+  const items = cov.missing.map(m =>
+    `<li class="${m.tier}"><strong>${esc(m.name)}</strong>${m.why ? " — " + esc(m.why) : ""}</li>`).join("");
+  const ess = cov.missing.some(m => m.tier === "essential");
+  return `<div class="coverage ${ess ? "warn" : "info"}">
+    <div class="cov-head"><span class="cov-ico">${ess ? "⚠" : "ⓘ"}</span>
+      <span>Add these channels before your next log${ess ? " — some are essential" : ""}:</span>
+      <button class="linklike cov-ref" id="cov-ref-btn">see the full list</button></div>
+    <ul class="cov-miss">${items}</ul></div>`;
 }
 
 /* ---------- boot ---------- */

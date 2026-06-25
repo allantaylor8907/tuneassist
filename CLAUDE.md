@@ -66,6 +66,14 @@ tunable state.
 - `tables.py` — maps a recommended change → the **exact vendor table** to edit
   (GM HP Tuners table names + Holley table names). `core._name_tables` appends
   these to findings; `_primary_change_finding` names the lead table inline.
+- `channels_ref.py` — the canonical **"what to log" reference** per platform/
+  generation (Gen 3 / Gen 4 / Gen 5 / Holley), each channel tagged
+  essential/recommended/reference with the internal resolver `key` + a `why`.
+  `reference()` feeds the GUI "Channels to log" popout (and the onboarding guide);
+  `coverage(col, platform, architecture)` checks a resolved log's columns and
+  returns present/missing (with why) → `CoreResult.channel_coverage` → the report's
+  coverage strip ("add these before your next log"). Holley keys are Holley's
+  resolver canonicals (cts/mat/ign/afr_target/cl_comp/learn). Tested.
 - `cams.py` — optional cam specs → conservative idle/timing starting points
   (DESIGN §11). Classify stock/mild/big; starting-point guidance only. Tested.
 - `profile.py` — optional engine profile (block material, compression, power
