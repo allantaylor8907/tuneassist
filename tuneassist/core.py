@@ -458,6 +458,7 @@ class CoreResult:
     timeseries: dict | None = None         # downsampled traces (GUI timeline)
     ve_axes: dict | None = None            # the custom VE table axes used, if any
     spark_axes: dict | None = None         # the custom spark table axes used, if any
+    channel_coverage: dict | None = None   # logged vs missing channels for this log
 
     @property
     def has_grid(self) -> bool:
@@ -650,11 +651,18 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
         ts = build_timeseries(df, col, stoich=cfg.stoich)
     except Exception:                      # pragma: no cover - defensive
         ts = None
+
+    try:
+        from . import channels_ref
+        coverage = channels_ref.coverage(col, platform, opts.architecture)
+    except Exception:                      # pragma: no cover - defensive
+        coverage = None
     return CoreResult(platform=platform, triage=tr, stage=stage, summary=summary,
                       make=opts.make, architecture=opts.architecture,
                       result=result, spark=spark, maf=maf, prescription=rx,
                       empty_reason=empty_reason, findings=findings, notes=notes,
-                      timeseries=ts, ve_axes=ve_axes, spark_axes=spark_axes)
+                      timeseries=ts, ve_axes=ve_axes, spark_axes=spark_axes,
+                      channel_coverage=coverage)
 
 
 # --------------------------------------------------------------------------
@@ -1095,6 +1103,8 @@ def result_to_dict(cr: CoreResult) -> dict:
         d["ve_axes"] = cr.ve_axes          # the custom VE table axes the grid used
     if cr.spark_axes:
         d["spark_axes"] = cr.spark_axes    # the custom spark table axes used
+    if cr.channel_coverage:
+        d["channel_coverage"] = cr.channel_coverage
     tsv = {}
     for name, fn in (("correction", correction_tsv), ("maf", maf_tsv),
                      ("spark", spark_tsv)):

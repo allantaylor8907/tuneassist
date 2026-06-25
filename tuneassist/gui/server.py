@@ -238,9 +238,11 @@ def make_handler(state: GuiState, token: str):
                 return self._json({"vehicles": [_vehicle_record(state, n) for n in names]})
             if path == "/api/presets":
                 from .. import stages
+                from .. import channels_ref
                 return self._json({
                     "journey": [{"key": k, "title": t} for k, t in stages.STAGES],
                     "fitment": fitment.FITMENT,
+                    "channels": channels_ref.reference(),
                     "fuels": [{"label": l, "stoich": s} for l, s in FUELS],
                     "airflows": [{"label": l, "mode": m} for l, m in AIRFLOWS],
                     "cam_tiers": [{"label": l, "tier": t} for l, t in CAM_TIERS],
@@ -257,10 +259,14 @@ def make_handler(state: GuiState, token: str):
 
         # ---- POST ---------------------------------------------------------
         def do_POST(self):
+            # the handler instance is reused across keep-alive requests, so reset
+            # the per-request body cache BEFORE reading -- otherwise request N+1
+            # would get request N's cached body (and leave its own unread).
+            self._cached_body = None
             path = self._route()
             if path is None:
                 return self._error("forbidden", 403)
-            self._body()                     # always drain the request body
+            self._body()                     # read + cache THIS request's body
             try:
                 return self._api_post(path)
             except Exception as e:           # surface analysis errors to the UI

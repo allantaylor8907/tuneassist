@@ -39,6 +39,8 @@ def test_api_end_to_end():
             pr = get("api/presets")
             assert len(pr["journey"]) == 8 and pr["engines"] and pr["mods"]
             assert any(a["key"] == "gm_gen4_ls" for a in pr["architectures"])
+            # channel reference for the "what to log" popout
+            assert pr["channels"]["gm_gen3_ls"]["channels"] and pr["channels"]["holley"]["channels"]
 
             # garage roundtrip
             post("api/garage/upsert", {"name": "t1", "nickname": "Red",
@@ -53,6 +55,7 @@ def test_api_end_to_end():
             assert d2["stage"] == "TUNE_VE_SD" and d2["findings"]
             assert d2["timeseries"]["t"] and "rpm" in d2["timeseries"]["traces"]
             assert "correction" in d2["tsv"]
+            assert "channel_coverage" in d2 and "present" in d2["channel_coverage"]
             g2 = get("api/garage")
             assert g2["vehicles"][0]["stage"] == "TUNE_VE_SD"
             assert len(g2["vehicles"][0]["history"]) == 1
@@ -103,6 +106,51 @@ def test_ve_axes_round_trip_through_gui():
             assert len(rows) == 4 and len(rows[0].split("\t")) == 5   # MAP rows x RPM cols
             # analyzing a saved car must NOT wipe its axes from the record
             assert get("api/garage")["vehicles"][0]["ve_axes"]["map"] == [20, 40, 60, 80]
+        finally:
+            httpd.shutdown()
+
+
+def test_keepalive_second_post_reads_its_own_body():
+    # regression: the handler instance is reused across keep-alive requests, so a
+    # cached body must not leak from one request to the next. Two POSTs with
+    # DIFFERENT bodies on ONE socket -> the 2nd handler must see the 2nd body.
+    import socket
+    with tempfile.TemporaryDirectory() as d:
+        httpd, url, state = start_server(os.path.join(d, "g.json"))
+        try:
+            # url is http://127.0.0.1:PORT/TOKEN/
+            _, _, rest = url.partition("://")
+            hostport, _, tokslash = rest.partition("/")
+            host, port = hostport.split(":")
+            token = tokslash.strip("/")
+
+            def post_frame(path, obj):
+                body = json.dumps(obj).encode()
+                return (f"POST /{token}/{path} HTTP/1.1\r\nHost: {host}\r\n"
+                        f"Content-Type: application/json\r\nContent-Length: {len(body)}\r\n"
+                        f"Connection: keep-alive\r\n\r\n").encode() + body
+
+            def read_one(sock):
+                buf = b""
+                while b"\r\n\r\n" not in buf:
+                    buf += sock.recv(4096)
+                head, _, rest = buf.partition(b"\r\n\r\n")
+                clen = next(int(l.split(b":")[1]) for l in head.split(b"\r\n")
+                            if l.lower().startswith(b"content-length"))
+                while len(rest) < clen:
+                    rest += sock.recv(4096)
+                return json.loads(rest[:clen])
+
+            s = socket.create_connection((host, int(port)), timeout=5)
+            s.sendall(post_frame("api/garage/upsert", {"name": "AAA", "platform": "gm"}))
+            r1 = read_one(s)
+            s.sendall(post_frame("api/garage/upsert", {"name": "BBB", "platform": "holley"}))
+            r2 = read_one(s)
+            s.close()
+            assert r1["vehicle"]["name"] == "AAA"
+            # the 2nd request on the same connection must reflect ITS OWN body
+            assert r2["vehicle"]["name"] == "BBB"
+            assert r2["vehicle"]["platform_label"] == "Holley EFI"
         finally:
             httpd.shutdown()
 
