@@ -155,6 +155,22 @@ def test_keepalive_second_post_reads_its_own_body():
             httpd.shutdown()
 
 
+def test_compare_endpoint():
+    with tempfile.TemporaryDirectory() as d:
+        httpd, url, state = start_server(os.path.join(d, "g.json"))
+        try:
+            get, post = _client(url)
+            r = post("api/compare", {"path_a": RIDE, "path_b": RIDE, "stoich": 14.7})
+            assert "comparison" in r and "metrics" in r["comparison"]
+            assert r["a"]["log_name"] == "ride42.csv" and r["b"]["log_name"] == "ride42.csv"
+            # same log vs itself -> nothing resolved/new, no per-cell change
+            assert r["comparison"]["findings"]["resolved"] == []
+            assert r["comparison"]["findings"]["new"] == []
+            assert all(c["delta"] == 0 for c in r["comparison"]["correction_delta"])
+        finally:
+            httpd.shutdown()
+
+
 def test_update_endpoints_non_frozen():
     # in tests we're not a frozen binary -> install returns guidance, no worker;
     # the progress endpoint always answers with a phase the GUI can render.

@@ -183,6 +183,8 @@
           </div>
           <div class="dz-foot">
             <button class="linklike" id="channels-btn">&#x1F4CB; Which channels should I log?</button>
+            <span class="dz-dot">·</span>
+            <button class="linklike" id="compare-btn">&#x21C6; Compare two logs</button>
           </div>
         </div>
       </div>
@@ -277,6 +279,29 @@
         <span class="chan-tier reference">nice to have</span>
       </span>
       <button class="primary" id="channels-copy">Copy list</button>
+    </div>
+  </div>
+</div>
+
+<div id="compare-modal" class="modal-wrap hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Compare two logs</h2>
+      <button class="ghost modal-x" id="compare-close" title="Close">&#x2715;</button>
+    </div>
+    <p class="sub">Pick a <strong>before</strong> and <strong>after</strong> log for the same car
+      to see what your change did — fuel error, knock, and which issues cleared.</p>
+    <div class="cmp-pick">
+      <div class="cmp-slot"><label>Before</label>
+        <button class="ghost" id="cmp-browse-a">Browse…</button>
+        <span class="cmp-name" id="cmp-name-a"></span></div>
+      <div class="cmp-slot"><label>After</label>
+        <button class="ghost" id="cmp-browse-b">Browse…</button>
+        <span class="cmp-name" id="cmp-name-b"></span></div>
+    </div>
+    <div class="modal-foot">
+      <span class="sub" id="cmp-msg"></span>
+      <button class="primary" id="cmp-run" disabled>Compare</button>
     </div>
   </div>
 </div>

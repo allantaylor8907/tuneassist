@@ -311,6 +311,24 @@ def make_handler(state: GuiState, token: str):
                     state.save_garage()
                 return self._json(d)
 
+            if path == "/api/compare":
+                p = self._payload()
+                pa = (p.get("path_a") or "").strip().strip('"')
+                pb = (p.get("path_b") or "").strip().strip('"')
+                for pth in (pa, pb):
+                    if not pth or not os.path.isfile(pth):
+                        return self._error(f"log not found: {pth!r}", 404)
+                platform, opts = _opts_from_payload(p)
+                da = core.analyze_log(pa, opts, platform=platform, out_dir=None).to_dict()
+                db = core.analyze_log(pb, opts, platform=platform, out_dir=None).to_dict()
+                return self._json({
+                    "comparison": core.compare_results(da, db),
+                    "a": {"log_name": os.path.basename(pa), "stage": da.get("stage"),
+                          "correction": da.get("correction"), "ve_axes": da.get("ve_axes")},
+                    "b": {"log_name": os.path.basename(pb), "stage": db.get("stage"),
+                          "correction": db.get("correction"), "ve_axes": db.get("ve_axes")},
+                })
+
             if path == "/api/analyze-upload":
                 # drag & drop: raw CSV bytes; query-ish params come via headers
                 raw = self._body()
