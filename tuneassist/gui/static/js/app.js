@@ -1107,6 +1107,109 @@ function buildCoverage(d) {
     <ul class="cov-miss">${items}</ul></div>`;
 }
 
+/* ---------- compare two logs ---------- */
+const cmp = { a: null, b: null };
+function cmpRefresh() {
+  $("#cmp-name-a").textContent = cmp.a ? cmp.a.replace(/^.*[\\/]/, "") : "";
+  $("#cmp-name-b").textContent = cmp.b ? cmp.b.replace(/^.*[\\/]/, "") : "";
+  $("#cmp-run").disabled = !(cmp.a && cmp.b);
+}
+$("#compare-btn").onclick = () => { $("#compare-modal").classList.remove("hidden"); cmpRefresh(); };
+$("#compare-close").onclick = () => $("#compare-modal").classList.add("hidden");
+$("#compare-modal").onclick = e => { if (e.target.id === "compare-modal") $("#compare-modal").classList.add("hidden"); };
+async function cmpBrowse(slot) {
+  const d = await api("api/pick-file", { body: {} });
+  if (d.path) { cmp[slot] = d.path; cmpRefresh(); }
+}
+$("#cmp-browse-a").onclick = () => cmpBrowse("a");
+$("#cmp-browse-b").onclick = () => cmpBrowse("b");
+$("#cmp-run").onclick = async () => {
+  $("#cmp-msg").textContent = "Analyzing both…";
+  $("#cmp-run").disabled = true;
+  try {
+    const body = analyzeOpts(); body.path_a = cmp.a; body.path_b = cmp.b;
+    const d = await api("api/compare", { body });
+    $("#compare-modal").classList.add("hidden");
+    $("#cmp-msg").textContent = "";
+    showComparison(d);
+  } catch (e) {
+    $("#cmp-msg").textContent = "Compare failed: " + e.message;
+    $("#cmp-run").disabled = false;
+  }
+};
+
+function fmtCmpVal(v) { return v == null ? "—" : (typeof v === "number" ? (Math.round(v * 100) / 100) : v); }
+function showComparison(d) {
+  const c = d.comparison;
+  S.report = null;                          // comparison view, not a single report
+  disposeCharts();
+  const rep = $("#report");
+  rep.classList.remove("hidden");
+  const rows = c.metrics.filter(m => m.a != null || m.b != null).map(m => {
+    const cls = m.same ? "same" : (m.better ? "better" : "worse");
+    const mark = m.same ? "—" : (m.better ? "✓" : "⚠");
+    return `<tr class="${cls}"><td>${esc(m.label)}</td><td class="cmp-a">${fmtCmpVal(m.a)}</td>
+      <td class="cmp-arrow">→</td><td class="cmp-b">${fmtCmpVal(m.b)}</td><td class="cmp-mark">${mark}</td></tr>`;
+  }).join("");
+  const fcol = (title, arr, cls) =>
+    `<div class="cmp-fcol ${cls}"><h4>${title} <span>(${arr.length})</span></h4>` +
+    (arr.length ? `<ul>${arr.map(f => `<li>${esc(f.title)}</li>`).join("")}</ul>`
+                : `<p class="sub">none</p>`) + `</div>`;
+  const hasDelta = c.correction_delta && c.correction_delta.length;
+  rep.innerHTML = `
+    <div class="verdict">
+      <div class="vh-row">
+        <span class="chip">${esc(d.a.log_name || "before")}</span>
+        <span class="cmp-arrow">→</span>
+        <span class="chip accent">${esc(d.b.log_name || "after")}</span>
+        ${c.stage && c.stage.advanced ? `<span class="badge opp">journey advanced</span>` : ""}
+      </div>
+      <h2>Before → after</h2>
+      <p class="lead">${esc(c.headline)}</p>
+      <table class="cmp-table">${rows}</table>
+    </div>
+    <div class="cmp-findings">
+      ${fcol("Cleared", c.findings.resolved, "resolved")}
+      ${fcol("Still there", c.findings.persisting, "persisting")}
+      ${fcol("New", c.findings.new, "new")}
+    </div>
+    ${hasDelta ? `<div class="chart-card"><div class="ch-head"><h3>Where the fuel error changed</h3>
+      <span class="ch-sub">green = got closer to target · red = moved away</span></div>
+      <div id="cmp-heatmap" class="chart-box"></div></div>` : ""}`;
+  if (hasDelta) S.charts.cmp = compareHeatmap($("#cmp-heatmap"), c.correction_delta);
+  rep.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function compareHeatmap(el, cells) {
+  const C = chartColors();
+  const rpmL = axisSort([...new Set(cells.map(c => c.rpm))]);
+  const mapL = axisSort([...new Set(cells.map(c => c.map))]);
+  const data = cells.map(c => [mapL.indexOf(c.map), rpmL.indexOf(c.rpm), c.delta, c.a, c.b]);
+  const lim = Math.max(2, ...cells.map(c => Math.abs(c.delta)));
+  const cellW = (el.clientWidth - 182) / Math.max(1, mapL.length);
+  const ch = echarts.init(el, null, { renderer: "canvas" });
+  ch.setOption({
+    animationDuration: 350,
+    grid: { left: 86, right: 96, top: 18, bottom: 44 },
+    xAxis: { type: "category", data: mapL, name: "MAP (kPa)", nameLocation: "middle", nameGap: 30,
+      axisLabel: { color: C.text3 }, nameTextStyle: { color: C.text3 },
+      axisLine: { lineStyle: { color: C.grid } }, splitArea: { show: true } },
+    yAxis: { type: "category", data: rpmL, name: "RPM", axisLabel: { color: C.text3 },
+      nameTextStyle: { color: C.text3 }, axisLine: { lineStyle: { color: C.grid } }, splitArea: { show: true } },
+    visualMap: { min: -lim, max: lim, calculable: true, orient: "vertical", right: 6, top: "middle",
+      text: ["worse", "better"], dimension: 2, textStyle: { color: C.text3, fontSize: 11 },
+      inRange: { color: [C.opp, C.bg2, C.crit] } },
+    tooltip: { confine: true, formatter: p =>
+      `<b>${rpmL[p.value[1]]} RPM × ${mapL[p.value[0]]} kPa</b><br>` +
+      `${p.value[3] > 0 ? "+" : ""}${p.value[3]}% → ${p.value[4] > 0 ? "+" : ""}${p.value[4]}%` +
+      `<br><span style="opacity:.75">${p.value[2] < 0 ? "closer to target" : p.value[2] > 0 ? "further off" : "no change"}</span>` },
+    series: [{ type: "heatmap", data, label: { show: cellW >= 46, fontSize: 10, color: C.text,
+      formatter: p => (p.value[2] > 0 ? "+" : "") + p.value[2].toFixed(1) },
+      emphasis: { itemStyle: { shadowBlur: 8, shadowColor: "rgba(0,0,0,.4)" } } }],
+  });
+  return ch;
+}
+
 /* ---------- boot ---------- */
 (async function boot() {
   try {

@@ -399,6 +399,35 @@ def test_maf_mode_emits_frequency_table_when_available():
     assert "maf" not in d or d["maf"]["axis"] == "frequency_hz"
 
 
+def test_compare_results_diffs_two_analyses():
+    from tuneassist.core import compare_results
+    a = {"stage": "TUNE_VE_SD", "summary": {"max_abs_pct": 9.0, "n_confident": 30},
+         "journey": [{"key": "TUNE_VE_SD"}, {"key": "TUNE_MAF"}],
+         "findings": [{"id": "APPLY_FUEL", "title": "VE off"}, {"id": "BANK_IMBAL", "title": "Bank imbalance"}],
+         "correction": {"cells": [{"rpm": "400-800", "map": "20-30", "value": 9.0},
+                                  {"rpm": "800-1200", "map": "20-30", "value": -4.0}]},
+         "timeseries": {"events": [{"t": 1}], "bands": [{"type": "lean"}, {"type": "lean"}]}}
+    b = {"stage": "TUNE_MAF", "summary": {"max_abs_pct": 3.0, "n_confident": 40},
+         "journey": [{"key": "TUNE_VE_SD"}, {"key": "TUNE_MAF"}],
+         "findings": [{"id": "APPLY_FUEL", "title": "VE off"}, {"id": "WOT_LEAN", "title": "WOT lean"}],
+         "correction": {"cells": [{"rpm": "400-800", "map": "20-30", "value": 2.0},
+                                  {"rpm": "800-1200", "map": "20-30", "value": -1.0}]},
+         "timeseries": {"events": [], "bands": [{"type": "lean"}]}}
+    c = compare_results(a, b)
+    assert c["stage"]["advanced"] is True
+    worst = next(m for m in c["metrics"] if m["label"].startswith("Worst cell"))
+    assert worst["a"] == 9.0 and worst["b"] == 3.0 and worst["better"] is True
+    knock = next(m for m in c["metrics"] if m["label"].startswith("Knock"))
+    assert knock["a"] == 1 and knock["b"] == 0 and knock["better"] is True
+    assert [f["id"] for f in c["findings"]["resolved"]] == ["BANK_IMBAL"]
+    assert [f["id"] for f in c["findings"]["new"]] == ["WOT_LEAN"]
+    assert [f["id"] for f in c["findings"]["persisting"]] == ["APPLY_FUEL"]
+    # per-cell delta: |value| got smaller in both shared cells -> negative deltas
+    deltas = {(d["rpm"], d["map"]): d["delta"] for d in c["correction_delta"]}
+    assert deltas[("400-800", "20-30")] == -7.0 and deltas[("800-1200", "20-30")] == -3.0
+    assert "dropped" in c["headline"]
+
+
 def test_headless_writes_nothing_when_out_dir_none(tmp_path=None):
     # out_dir=None means no CSV side-effects -- safe for pure JSON/UI use
     before = set(os.listdir(FIX))

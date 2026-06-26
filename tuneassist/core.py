@@ -618,6 +618,15 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
             _apply_mod_insights(findings, summary, result, mods)
         # Point each finding at the EXACT vendor table to edit.
         _name_tables(findings, platform)
+    elif tr.state in ("CRANKING_NO_START", "STARTED_STALLED"):
+        # It cranked (or caught and died) but isn't tunable yet -- diagnose WHY it
+        # won't start from the crank-window channels instead of leaving the user
+        # with only the generic triage advice.
+        try:
+            from . import crank
+            findings = crank.diagnose_no_start(df, col, cfg, tr.state)
+        except Exception as e:   # pragma: no cover - defensive
+            notes.append(f"No-start diagnosis skipped: {e}")
 
     if eth_note:
         findings.append(diagnostics.Finding(
@@ -1117,6 +1126,97 @@ def result_to_dict(cr: CoreResult) -> dict:
     if tsv:
         d["tsv"] = tsv
     return d
+
+
+# --------------------------------------------------------------------------
+# Before/after comparison -- operate on two to_dict() payloads (the stable
+# contract) so it's UI-agnostic and testable.
+# --------------------------------------------------------------------------
+def _corr_cells(d: dict) -> dict:
+    return {(c["rpm"], c["map"]): c["value"]
+            for c in (d.get("correction") or {}).get("cells", [])}
+
+
+def _knock_count(d: dict) -> int:
+    ts = d.get("timeseries") or {}
+    return max(len(ts.get("events") or []), (d.get("spark") or {}).get("knock_cells", 0) or 0)
+
+
+def _band_count(d: dict, typ: str) -> int:
+    ts = d.get("timeseries") or {}
+    return sum(1 for x in (ts.get("bands") or []) if x.get("type") == typ)
+
+
+def compare_results(a: dict, b: dict) -> dict:
+    """Diff two analyses (each a to_dict() payload), a=before, b=after. Returns
+    metric deltas, findings resolved/new/persisting (by id), stage movement, an
+    optional per-cell correction delta (when the grids share axes), and a plain-
+    English headline. 'better' is direction-aware (less fuel error / less knock)."""
+    sa, sb = a.get("summary") or {}, b.get("summary") or {}
+
+    def metric(label, key, lower_better=True, src_a=sa, src_b=sb):
+        va, vb = src_a.get(key), src_b.get(key)
+        out = {"label": label, "a": va, "b": vb}
+        if isinstance(va, (int, float)) and isinstance(vb, (int, float)):
+            out["a"] = float(va); out["b"] = float(vb)
+            out["delta"] = round(float(vb) - float(va), 2)
+            out["better"] = bool((vb < va) if lower_better else (vb > va))   # native bool for JSON
+            out["same"] = bool(vb == va)
+        return out
+
+    ka, kb = _knock_count(a), _knock_count(b)
+    lean_a, lean_b = _band_count(a, "lean"), _band_count(b, "lean")
+    rich_a, rich_b = _band_count(a, "rich"), _band_count(b, "rich")
+    metrics = [
+        metric("Worst cell (|%|)", "max_abs_pct"),
+        metric("Cruise worst (|%|)", "cruise_max_abs_pct"),
+        metric("WOT worst (|%|)", "wot_max_abs_pct"),
+        metric("Cells covered", "n_confident", lower_better=False),
+        {"label": "Knock cells/events", "a": ka, "b": kb, "delta": kb - ka,
+         "better": kb < ka, "same": kb == ka},
+        {"label": "Lean-under-load spots", "a": lean_a, "b": lean_b,
+         "delta": lean_b - lean_a, "better": lean_b < lean_a, "same": lean_b == lean_a},
+        {"label": "Too-rich spots", "a": rich_a, "b": rich_b,
+         "delta": rich_b - rich_a, "better": rich_b < rich_a, "same": rich_b == rich_a},
+    ]
+
+    fa = {f["id"]: f for f in a.get("findings", [])}
+    fb = {f["id"]: f for f in b.get("findings", [])}
+    findings = {
+        "resolved": [fa[i] for i in fa if i not in fb],
+        "new": [fb[i] for i in fb if i not in fa],
+        "persisting": [fb[i] for i in fb if i in fa],
+    }
+
+    journey = b.get("journey") or a.get("journey") or []
+    order = {s["key"]: i for i, s in enumerate(journey)}
+    sga, sgb = a.get("stage"), b.get("stage")
+    stage = {"a": sga, "b": sgb,
+             "advanced": bool(order.get(sgb, -1) > order.get(sga, -1)) if order else None}
+
+    ca, cb = _corr_cells(a), _corr_cells(b)
+    shared = sorted(set(ca) & set(cb), key=lambda k: (str(k[0]), str(k[1])))
+    corr_delta = [{"rpm": k[0], "map": k[1], "a": ca[k], "b": cb[k],
+                   "delta": round(abs(cb[k]) - abs(ca[k]), 2)} for k in shared]
+
+    # headline: lead with the worst-cell fuel error trend
+    headline = "Compared two logs."
+    va, vb = sa.get("max_abs_pct"), sb.get("max_abs_pct")
+    if isinstance(va, (int, float)) and isinstance(vb, (int, float)) and va:
+        pct = round((abs(va) - abs(vb)) / abs(va) * 100)
+        if abs(va) - abs(vb) > 0.2:
+            headline = f"Worst-cell fuel error dropped {pct}% (±{abs(va):g}% → ±{abs(vb):g}%)."
+        elif abs(vb) - abs(va) > 0.2:
+            headline = f"Worst-cell fuel error grew (±{abs(va):g}% → ±{abs(vb):g}%) — check what changed."
+        else:
+            headline = f"Fuel error about the same (±{abs(va):g}% → ±{abs(vb):g}%)."
+    if findings["resolved"]:
+        headline += f" {len(findings['resolved'])} issue(s) cleared."
+    if findings["new"]:
+        headline += f" {len(findings['new'])} new."
+
+    return {"headline": headline, "metrics": metrics, "findings": findings,
+            "stage": stage, "correction_delta": corr_delta}
 
 
 def _find_interval(index, label: str):

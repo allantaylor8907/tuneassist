@@ -48,6 +48,13 @@ tunable state.
   `analyze()` now populates the `recommendation`/`wb_dev` cross-check grids.
   `maf_correction()` builds the frequency-indexed MAF-curve correction (DESIGN §9).
 - `triage.py` — vehicle-state preflight (NO_CRANK … RUNNING_DRIVE). Tested.
+- `crank.py` — **crank/no-start diagnosis**. When triage returns CRANKING_NO_START
+  or STARTED_STALLED, `diagnose_no_start(df, col, cfg, state)` reads the crank
+  window and explains WHY it won't catch: injector pulse (NOSTART_NO_INJECTION),
+  fuel pressure, wideband flooded/starved, spark/sync confirmable, slow crank, or
+  a "log these" catch-all. Returns ranked `diagnostics.Finding`s; `core` runs it
+  in the `not can_correct` branch so a no-start log still gets real findings.
+  Tested (synthetic crank logs).
 - `holley.py` — Holley CSV ingest + Learn/CL-comp-based correction.
 - `spark.py` — knock-governed timing analysis (DESIGN §10). Refuses without a knock
   channel; PULLs on knock (+margin), cautious opt-in ADDs for power; flags LEAN/HOT
