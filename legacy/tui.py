@@ -27,9 +27,10 @@ from textual.widgets import (Header, Footer, Button, Input, Select, Switch,
                              Static, Label, DataTable, DirectoryTree, Collapsible,
                              TabbedContent, TabPane, Checkbox)
 
-from . import core, garage, cams, panels
-from .engine_gm import Config
-from .profile import EngineProfile, ENGINE_PRESETS, COMMON_MODS, preset_to_profile
+from tuneassist import core, garage, cams
+from . import panels
+from tuneassist.engine_gm import Config
+from tuneassist.profile import EngineProfile, ENGINE_PRESETS, COMMON_MODS, preset_to_profile
 
 
 FUELS = [("Pump gas 91-93", 14.7), ("E10 / 87-89", 14.08), ("E85", 9.76),
@@ -437,7 +438,7 @@ class AnalyzeScreen(Screen):
             if not demo:
                 yield Button("Browse…", id="pick")
             yield Button("Analyze", variant="primary", id="analyze")
-            from . import submit
+            from tuneassist import submit
             if submit.is_enabled() and not demo:
                 yield Button("Share log", id="share")
         with Collapsible(title="Sample logs" if demo else "…or browse in-app",
@@ -594,7 +595,7 @@ class AnalyzeScreen(Screen):
         self._populate_grid(cr)
         self._populate_cells(cr)
         self.notify(f"Stage: {cr.stage.replace('_', ' ').title()}", severity="information")
-        from . import submit
+        from tuneassist import submit
         if submit.is_enabled() and not getattr(self.app, "demo", False):
             self.notify("Want to help improve tuneassist? Press 'S' to share this log.",
                         title="tuneassist", severity="information", timeout=8)
@@ -602,7 +603,7 @@ class AnalyzeScreen(Screen):
     def action_share_log(self):
         """Opt-in: bundle the just-analyzed log + analysis summary and open the
         submission form. Never sends anything on its own."""
-        from . import submit
+        from tuneassist import submit
         if not submit.is_enabled() or getattr(self.app, "demo", False):
             return
         if not self._cr or not self._last_path:
@@ -801,7 +802,7 @@ class TuneAssistApp(App):
     def _passive_update_check(self):
         """Daemon-threaded, fail-silent once-a-day check -> a gentle notify."""
         import threading
-        from . import update
+        from tuneassist import update
 
         def work():
             try:
@@ -828,7 +829,7 @@ class TuneAssistApp(App):
         """Ctrl+U / the garage button: download + install the latest release, then
         relaunch into the new version."""
         import threading
-        from . import update
+        from tuneassist import update
 
         self.notify("Checking for updates...", title="tuneassist", timeout=3)
 
@@ -841,7 +842,7 @@ class TuneAssistApp(App):
         threading.Thread(target=work, daemon=True).start()
 
     def _finish_update(self, ok: bool, msg: str):
-        from . import update
+        from tuneassist import update
         self.notify(msg, title="tuneassist",
                     severity="information" if ok else "warning", timeout=8)
         if ok and update.is_frozen():

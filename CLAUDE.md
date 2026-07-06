@@ -87,7 +87,7 @@ tunable state.
   adder, mods) → tailored spark ceiling + "pull timing back when…" checklist.
   Feeds `spark.analyze_spark(profile=…)`. Iron/low-CR vs alum/high-CR diverge here.
   `ENGINE_PRESETS` (Chevy LS/SBC/BBC, Ford, Pontiac) + `COMMON_MODS` +
-  `preset_to_profile()` drive the TUI's pick-an-engine setup. Tested.
+  `preset_to_profile()` drive the GUI's pick-an-engine setup. Tested.
 - `stages.py` — the tuning *journey* state machine (pure logic, tested):
   `summarize()` digests an analysis Result, `determine_stage()` maps
   (triage + digest) → journey stage, `prescribe()` → the concrete next move
@@ -111,22 +111,14 @@ tunable state.
   descending, VCM ascending); `parse_ve_table` reads a whole "Copy with Axis"
   paste (RPM header row + MAP-led data rows) so the GUI takes one paste instead
   of typed breakpoints; `clean_ve_axes` accepts `{table}` or `{rpm,map}`.
-- `panels.py` — **pure Rich renderable *builders*** (no printing/IO): banner,
-  journey bar, triage, heatmaps, cross-check, spark, MAF, safety, prescription,
-  and `build_report(cr, …)` (the whole result as one Group). Used by the TUI and
-  the plain `--batch`/`cli.run` report path.
-- `tui.py` — **the Textual app** (`run_tui`), the one interactive UI: GarageScreen
-  (pick/new/rename/delete) → SetupScreen (form) → AnalyzeScreen (log input →
-  `panels.build_report` + journey bar). Pure consumer of `core`; mounts shared
-  `panels.*` in Static widgets. Tested via the Textual pilot harness.
-  (The old Rich `wizard.py`/`render.py` were removed — TUI + `--batch`/`--json`
-  cover interactive + headless.)
+- `legacy/` (repo root) — **the retired Textual TUI**, preserved per the
+  retention policy: `tui.py`, `panels.py`, `demo.py`, `demo-serve/`, and their
+  pilot-harness tests. Retired at the v2 cutover (last shipped in v0.1.21) so
+  the frozen binary could drop `textual`+`rich`. Kept import-clean against the
+  current engine (see legacy/README.md); NOT in the wheel/binary or CI suite.
 - `garage.py` — on-disk per-vehicle memory (`~/.tuneassist/garage.json`): pure
   load/save/list/get/upsert, no package deps. Tolerates missing/corrupt files.
   Tests pass a temp `garage_path` so they never touch real home. Tested.
-- `demo.py` — locked-down demo entry for `textual serve` (`run_demo`): confines
-  file access to bundled `demo/samples/`, hides the native picker, throwaway
-  garage. `demo/serve.py` hosts it in a browser. Tested.
 - `update.py` — **self-update / release check** (stdlib only, offline-safe). Hits
   the GitHub Releases API, compares `__version__` to the latest tag, and for the
   frozen PyInstaller binary downloads the OS-matched asset and swaps it in place
@@ -143,17 +135,16 @@ tunable state.
   `TUNEASSIST_NO_UPDATE_CHECK=1`/`CI`, and every network path fails silently.
   pip/pipx installs are pointed at the package manager. Tested (all offline).
 - `submit.py` — **opt-in log submission** (off until `SUBMIT_URL` is set, stdlib
-  only). After an analysis the TUI ("Share log" button + `s`) offers to
+  only). After an analysis the GUI (`/api/submit`) offers to
   bundle ONLY the analyzed log + a non-identifying `submission.json` (version,
   platform, stage, profile, summary, finding ids, user-typed note/contact — never
   the garage/nickname) into `~/.tuneassist/submissions/*.zip`, then open a free
   upload form (`docs/SUBMISSIONS.md`; Tally recommended). Never auto-sends; the
   user attaches the file themselves. Tested.
-- `update.py` self-update also exposes `relaunch()` (start the swapped binary,
-  exit this one). The TUI shows a one-click "Update & restart" banner on the
-  garage screen when a newer release is found, and Ctrl+U installs + relaunches.
+- `update.py` also exposes `relaunch()` (start the swapped binary, exit this
+  one); the GUI's Settings card is the one-click "Update & restart" surface.
 - `shortcut.py` — **desktop launcher creator** (`--install-shortcut`, stdlib
-  only). Drops an OS-native double-clickable shortcut that opens the TUI: Windows
+  only). Drops an OS-native double-clickable shortcut that opens the app: Windows
   `.lnk` via WScript.Shell COM, macOS `.command`, Linux `.desktop` (+ app-menu
   entry). Resolves the launch target for frozen binary vs pip/console-script vs
   `python -m`. Writers factored for testing; paths with spaces quoted. Tested.
@@ -170,9 +161,15 @@ tunable state.
   (view fades, staggered report/finding reveals, journey pulse) honors
   `prefers-reduced-motion`. Brand: the heatmap-grid mark (`static/favicon.svg`
   + inline sidebar SVG, two-tone wordmark). **The GUI is the no-args default
-  since the v0.1.14 cutover** — `_hide_own_console()` hides the double-click
-  console (only when we're its sole owner). The TUI stays reachable via `--tui`
-  for one transition release, then TUI/panels/demo move to `legacy/`. Setup is a
+  since the v0.1.14 cutover; the TUI was retired to `legacy/` in v0.1.22.**
+  Console handling is layered: the Windows build passes `--hide-console
+  hide-early` so the PyInstaller BOOTLOADER hides the console before onefile
+  extraction (no black flash on double-click; terminal launches keep full
+  output), with `_hide_own_console()` (sole-owner check) as a Python-level
+  backstop. A branded `packaging/splash.png` shows during extraction
+  (`--splash`); `cli._close_splash()` drops it immediately for console paths
+  and `gui/app._close_splash()` hands it off once the window opens. The exe
+  carries `packaging/icon.ico` (multi-size, the heatmap mark). Setup is a
   fitment cascade (`fitment.py`): HP Tuners → make → generation → engine; Holley
   → product → make → engine — only real combinations (tests/test_fitment.py
   enforces); the muscle-car roster (SBC/BBC, Pontiac/Buick/Olds/AMC classics,
@@ -182,10 +179,11 @@ tunable state.
   "capture your first log" guide (channels to log, export-to-CSV steps, "grab a
   baseline, change nothing yet") before analysis. Tested via in-process HTTP
   (test_gui).
-- `cli.py` — orchestrator. No args → the v2 GUI (the default, so the downloaded
-  binary opens the app on double-click); a bare log path or `--batch` → plain
-  text report (`cli.run`, for SSH/scripts); `--tui` → classic Textual app;
-  `--demo` → locked-down demo; `--json` → headless JSON. `--version`,
+- `cli.py` — orchestrator. No args → the desktop GUI (the default, so the
+  downloaded binary opens the app on double-click); a bare log path or
+  `--batch` → plain text report (`cli.run`, for SSH/scripts); `--json` →
+  headless JSON. `--tui`/`--demo` are retired stubs that print where the old
+  TUI lives (legacy/) and exit. `--version`,
   `--check-update`, `--update`, `--install-shortcut` (launcher opens the
   default = GUI); a throttled one-line update notice precedes the report/batch
   flows. Version is single-sourced in `tuneassist/__init__.py` (`__version__`);
@@ -193,12 +191,15 @@ tunable state.
 
 ## Architecture / distribution
 - **UI is decoupled from the engine.** `core.py` is headless (data in → data out);
-  the TUI / `--batch` report are a presentation layer over it. Build new UIs against
-  `core.analyze_log(...).to_dict()`, never by importing the TUI.
+  the GUI / `--batch` report are presentation layers over it. Build new UIs
+  against `core.analyze_log(...).to_dict()`, never by importing another UI.
 - **Packaging is proven:** PyInstaller `--onefile` from `packaging/entry.py`
-  yields a ~32 MB single binary that runs the whole pipeline with no Python
-  installed (validated on Windows). `.github/workflows/build.yml` builds
-  win/mac/linux binaries and attaches them to GitHub Releases on `v*` tags.
+  yields a ~33 MB single binary (post-TUI-retirement; textual/rich gone, tcl/tk
+  added for the splash) that runs the whole pipeline with no Python installed.
+  `.github/workflows/build.yml` builds Windows (primary: icon + splash +
+  `--hide-console hide-early`) and Linux binaries and attaches them to GitHub
+  Releases on `v*` tags. macOS builds were dropped in v0.1.22 (the vendor
+  tuning software is Windows-only); update.py stays graceful there.
   Also `pipx install .` / `uv tool install .` (console script `tuneassist`).
 - Headless contract: `python -m tuneassist.cli LOG.csv --json [--spark] [--airflow …]`.
   Keep `core.to_dict()` stable; `tests/test_core.py` is its oracle.
@@ -227,10 +228,9 @@ and the **Textual UI** (`tui.py`) shipped — garage/setup/analyze screens reusi
 `panels.*`. Decision settled: stay Python + ship binaries; revisit a Rust+Polars
 port only if PyInstaller binaries prove unacceptable for end users.
 Remaining:
-0. DONE — DataTable grid (interactive + sortable), quick-scan bypass, native
-   file picker / browse-anywhere, Textual themes (Ctrl+T, gruvbox/nord/…,
-   persisted), ASCII-art logo banner. Remaining TUI polish: live file-watch to
-   auto-analyze a new log; `textual serve` web demo.
+0. DONE — and the whole Textual layer has since been RETIRED to legacy/
+   (v0.1.22); the GUI is the only interactive UI. Historical items kept above
+   for the record.
 1. DONE — Holley validated on a real Terminator X CSV (`tests/fixtures/
    holley_sample.csv`, `tests/test_holley.py`). Fixed: latin-1 + units-row in the
    loader, `MAP`/`TPS` vs `… RoC`, time=`RTC`, knock pattern, Holley-correct

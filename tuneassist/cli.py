@@ -110,6 +110,17 @@ def _print_update_notice():
         pass
 
 
+def _close_splash():
+    """Close the PyInstaller boot splash (frozen Windows build only). The GUI
+    path leaves it up until its window opens; every other path closes it here
+    so a terminal user isn't staring at a splash during a --json run."""
+    try:
+        import pyi_splash                     # exists only inside the frozen build
+        pyi_splash.close()
+    except Exception:
+        pass
+
+
 def main(argv=None):
     from . import __version__
     p = argparse.ArgumentParser(description="AI-assisted tuning analyzer (GM/HPTuners + Holley).")
@@ -123,10 +134,8 @@ def main(argv=None):
                    help="launch the desktop GUI (this is the default with no args)")
     p.add_argument("--gui-dev", action="store_true",
                    help="run the GUI server for a normal browser (development)")
-    p.add_argument("--tui", action="store_true",
-                   help="launch the classic Textual terminal UI")
-    p.add_argument("--demo", action="store_true",
-                   help="launch the locked-down demo (bundled sample logs only)")
+    p.add_argument("--tui", action="store_true", help=argparse.SUPPRESS)   # retired
+    p.add_argument("--demo", action="store_true", help=argparse.SUPPRESS)  # retired
     p.add_argument("--json", action="store_true",
                    help="headless: print the structured analysis as JSON and exit")
     p.add_argument("--airflow", choices=["ve_sd", "maf", "no_maf"], default="ve_sd",
@@ -137,8 +146,16 @@ def main(argv=None):
     p.add_argument("--update", action="store_true",
                    help="download and install the latest release (packaged binary)")
     p.add_argument("--install-shortcut", action="store_true",
-                   help="create a double-clickable desktop launcher for the TUI")
+                   help="create a double-clickable desktop launcher for the app")
     args = p.parse_args(argv)
+
+    # Everything except the GUI is console work -- drop the splash right away.
+    # (run_gui closes it itself once its window is up.)
+    gui_bound = args.gui or args.gui_dev or not (
+        args.log or args.batch or args.json or args.tui or args.demo
+        or args.check_update or args.update or args.install_shortcut)
+    if not gui_bound:
+        _close_splash()
 
     if getattr(args, "install_shortcut", False):
         from . import shortcut
@@ -166,14 +183,14 @@ def main(argv=None):
         run_gui(dev=args.gui_dev)
         return
 
-    if args.tui:
-        from .tui import run_tui
-        run_tui()
-        return
-
-    if getattr(args, "demo", False):
-        from .demo import run_demo
-        run_demo()
+    if args.tui or getattr(args, "demo", False):
+        # Retired at the v2 cutover -- the desktop GUI replaced it. The code is
+        # preserved in legacy/ (see legacy/README.md); the last release that
+        # shipped the TUI is v0.1.21.
+        print("The terminal UI was retired -- the desktop app replaced it.\n"
+              "  Run tuneassist with no arguments (or --gui) for the app.\n"
+              "  The old TUI code is preserved in legacy/ in the repo;\n"
+              "  the last release including it is v0.1.21.")
         return
 
     if args.json and args.log:
@@ -186,8 +203,8 @@ def main(argv=None):
         print(json.dumps(cr.to_dict(), indent=2))
         return
 
-    # A bare log path -> the quick non-interactive report (also covers SSH / dumb
-    # terminals where the TUI can't draw). --json above is the headless contract.
+    # A bare log path -> the quick non-interactive report (for SSH / scripts /
+    # dumb terminals). --json above is the headless contract.
     if args.log:
         _print_update_notice()
         run(args.log, args.platform, args.out_dir)
@@ -196,8 +213,7 @@ def main(argv=None):
         print("--batch needs a log file, e.g.  tuneassist your_log.csv --batch")
         return
 
-    # Default (e.g. double-clicking the downloaded binary): the v2 GUI.
-    # The Textual TUI remains reachable via --tui until it moves to legacy/.
+    # Default (e.g. double-clicking the downloaded binary): the desktop GUI.
     from .gui.app import run_gui
     run_gui()
 

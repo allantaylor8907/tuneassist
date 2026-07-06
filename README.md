@@ -21,7 +21,7 @@ your machine. No internet access required so you can tune on the street.
 [![Build](https://img.shields.io/github/actions/workflow/status/allantaylor8907/tuneassist/build.yml?branch=main)](https://github.com/allantaylor8907/tuneassist/actions)
 [![Downloads](https://img.shields.io/github/downloads/allantaylor8907/tuneassist/total)](https://github.com/allantaylor8907/tuneassist/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Platforms](https://img.shields.io/badge/runs%20on-Windows%20%7C%20macOS%20%7C%20Linux-555)
+![Platforms](https://img.shields.io/badge/built%20for-Windows%20(%2B%20Linux)-555)
 
 ---
 
@@ -55,32 +55,30 @@ engine ran dangerously lean under load or way too rich**:
 
 ## Get it
 
-**Easiest — grab the binary.** One file, no Python, no install. Download for your
-OS from the [Releases page](https://github.com/allantaylor8907/tuneassist/releases):
+**Easiest — grab the binary.** One file, no Python, no install. Download from the
+[Releases page](https://github.com/allantaylor8907/tuneassist/releases):
 
 | OS | File | Run it |
 |---|---|---|
 | Windows | `tuneassist-windows-x64.exe` | double-click it |
-| macOS | `tuneassist-macos-arm64` | `chmod +x tuneassist-macos-arm64 && ./tuneassist-macos-arm64` |
 | Linux | `tuneassist-linux-x64` | `chmod +x tuneassist-linux-x64 && ./tuneassist-linux-x64` |
 
-Running it with no arguments opens the desktop app.
+Double-click and it opens straight into the desktop app — branded splash while it
+unpacks, then the window. No console, no install steps. (HP Tuners and Holley EFI
+only run on Windows, so that's the primary target; the Linux build is there for
+analyzing exported CSVs elsewhere. macOS builds were retired for the same reason.)
 
-**First-run warnings (it's not signed — yet).** The binaries aren't code-signed,
-so your OS will throw a scary-but-harmless warning the first time:
-
-- **Windows:** "Windows protected your PC" → click **More info → Run anyway**.
-- **macOS:** right-click → **Open**, or `xattr -d com.apple.quarantine ./tuneassist-macos-arm64`.
-
-That's normal for an indie open-source binary. If you'd rather not trust a random
-download, build it yourself from source (below) — or verify the file against the
-published checksums: download `SHA256SUMS.txt` from the release and run
-`sha256sum -c SHA256SUMS.txt` (Linux/macOS) or
-`Get-FileHash tuneassist-windows-x64.exe` (Windows) and compare.
+**First-run warning (it's not signed — yet).** The binary isn't code-signed, so
+Windows throws a scary-but-harmless warning the first time: "Windows protected
+your PC" → click **More info → Run anyway**. That's normal for an indie
+open-source binary. If you'd rather not trust a random download, build it
+yourself from source (below) — or verify the file against the published
+checksums: download `SHA256SUMS.txt` from the release and compare with
+`Get-FileHash tuneassist-windows-x64.exe`.
 
 **Want a desktop icon?** One command drops a double-clickable launcher on your
-desktop (`.lnk` on Windows, `.command` on macOS, `.desktop` + app-menu entry on
-Linux) that opens straight into the UI:
+desktop (`.lnk` on Windows, `.desktop` + app-menu entry on Linux) that opens
+straight into the app:
 
     tuneassist --install-shortcut
 
@@ -124,8 +122,6 @@ setup** hand-holds first-timers through capturing a log. A **Beginner / Expert**
 toggle keeps it to the essentials or shows the deeper panels (spark grid, MAF
 curve, timeline).
 
-Prefer the terminal? The classic Textual UI is still there: `tuneassist --tui`.
-
 **Match it to your table, then paste straight in.** In your car's setup, paste
 your VE (and spark) table via **Copy with Axis** — now the correction grid is
 binned onto *your* exact breakpoints. **Copy for VCM/Holley (TSV)** puts it on the
@@ -156,30 +152,19 @@ reference once VE is right). Spark is **knock-governed**: it pulls timing where
 knock shows, and only adds timing toward MBT if you ask, one small step per pull.
 **No knock channel logged, no timing advice. Period.**
 
-### No terminal UI? Plain report
-
-    tuneassist your_log.csv        # quick non-interactive report
-    tuneassist your_log.csv --batch
-
-A one-shot text report (same analysis engine) for SSH, scripts, or a terminal
-the full UI can't draw in.
-
 ### Headless / scripting
 
-    tuneassist your_log.csv --batch              # plain-text report
+    tuneassist your_log.csv                      # quick plain-text report
+    tuneassist your_log.csv --batch              # same, plus .tsv files on disk
     tuneassist your_log.csv --json --spark       # structured JSON
 
-The `--json` output is the stable contract — triage, the correction grid, the
-cross-check, MAF/spark grids, and the prescription — for anyone who wants to
-build on top of it.
+The same engine, no window — for SSH, scripts, or automation. The `--json`
+output is the stable contract — triage, the correction grid, the cross-check,
+MAF/spark grids, and the prescription — for anyone who wants to build on top
+of it.
 
-### Try it in a browser (no install)
-
-    pip install ".[serve]"
-    python demo/serve.py        # http://localhost:8000
-
-Hosts the UI in a browser with bundled sample logs, locked down so it can't see
-the server's filesystem. Good for showing someone what it does.
+> The original Textual terminal UI was retired at the v2 cutover; its code is
+> preserved in [`legacy/`](legacy/README.md).
 
 ---
 

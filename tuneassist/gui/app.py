@@ -66,9 +66,19 @@ def open_window(url: str) -> bool:
         return False
 
 
+def _close_splash() -> None:
+    """Close the PyInstaller boot splash (present only in the frozen build)."""
+    try:
+        import pyi_splash
+        pyi_splash.close()
+    except Exception:
+        pass
+
+
 def run_gui(garage_path: str | None = None, dev: bool = False) -> None:
     httpd, url, state = start_server(garage_path)
     if dev:
+        _close_splash()
         print(f"tuneassist GUI (dev): {url}")
         print("Serving until Ctrl+C (no heartbeat shutdown in dev mode).")
         try:
@@ -81,6 +91,8 @@ def run_gui(garage_path: str | None = None, dev: bool = False) -> None:
     _hide_own_console()
     if not open_window(url):
         print(f"Couldn't open a window -- browse to {url}")
+    # window is launching -- hand off from the boot splash to the app
+    _close_splash()
     serve_until_closed(httpd, state)
 
 
