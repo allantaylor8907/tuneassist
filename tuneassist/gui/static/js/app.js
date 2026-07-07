@@ -609,7 +609,12 @@ document.addEventListener("drop", async e => {
     return;
   }
   if (!S.current) S.current = { name: null, ephemeral: true, stoich: 14.7, airflow_mode: "ve_sd" };
+  analyzeUpload(f);
+});
+
+async function analyzeUpload(f) {
   enterAnalyze();
+  S.reanalyze = () => analyzeUpload(f);        // so the report can re-run this log
   busy(true);
   try {
     const r = await fetch(BASE + "api/analyze-upload", {
@@ -622,11 +627,12 @@ document.addEventListener("drop", async e => {
     showReport(d);
   } catch (err) { toast("Analysis failed: " + err.message, "err"); }
   busy(false);
-});
+}
 
 async function runAnalyze() {
   const path = $("#path-input").value.trim();
   if (!path) { toast("Pick or paste a log CSV first."); return; }
+  S.reanalyze = () => runAnalyze();            // path-input still holds the log
   busy(true);
   try {
     const body = analyzeOpts(); body.path = path;
@@ -634,6 +640,15 @@ async function runAnalyze() {
     showReport(d);
   } catch (err) { toast("Analysis failed: " + err.message, "err"); }
   busy(false);
+}
+
+/* toggled right from the spark card: flip find-power and re-run this same log
+   (persists to the car on the server when it's a saved vehicle). */
+function setFindPower(on) {
+  if (S.current) S.current.find_power = on;
+  toast(on ? "Find power on — re-checking for safe timing to add…"
+           : "Find power off — showing knock-driven pulls only.", "ok");
+  if (S.reanalyze) S.reanalyze();
 }
 function busy(on) {
   $("#dropzone").classList.toggle("busy", on);
@@ -775,14 +790,19 @@ function buildChartShells(d) {
             : `degrees to add (+) / pull (−) per RPM × MAP cell`;
     const tableNotes = (sp.table_findings || []).map(t =>
       `<p class="sub spark-tablenote">⚠ ${esc(t)}</p>`).join("");
+    // inline find-power toggle -- reflects what THIS analysis ran with, and
+    // flipping it re-runs the same log (no trip to the setup screen)
+    const fpToggle = `<label class="spark-fp" title="Suggest small, knock-safe timing ADDs toward MBT (off = knock-driven pulls only)">
+        <input type="checkbox" id="spark-fp"${sp.find_power ? " checked" : ""}> Find power</label>`;
     if (!hasWork) {
       // nothing to change: say it in words instead of a grid of zeros
       const powerHint = sp.find_power
-        ? "Find power is on, but no cells had the load + clean AFR/IAT needed to suggest an add — get more time at WOT."
-        : "Want to hunt for MBT? Turn on <strong>Find power</strong> in this car's setup (Edit) and it will suggest careful +1° adds where the data says it's safe.";
+        ? "Find power is on, but no cells had the load + clean AFR/IAT needed to suggest an add — get some wide-open-throttle pulls into the log."
+        : "Flip <strong>Find power</strong> on (right here) and it'll suggest careful +1° adds toward MBT wherever the data says it's safe.";
       html += `
     <div class="chart-card expert-only">
-      <div class="ch-head"><h3>Spark / timing</h3><span class="ch-sub">${sub}</span></div>
+      <div class="ch-head"><h3>Spark / timing</h3><span class="ch-sub">${sub}</span>
+        <div class="ch-actions">${fpToggle}</div></div>
       <div class="spark-clean">
         <span class="spark-clean-ico">✓</span>
         <div><strong>No knock anywhere in this log — timing is holding at its current advance.</strong>
@@ -796,7 +816,7 @@ function buildChartShells(d) {
     <div class="chart-card expert-only">
       <div class="ch-head">
         <h3>Spark / timing change</h3><span class="ch-sub">${sub}</span>
-        <div class="ch-actions">
+        <div class="ch-actions">${fpToggle}
           ${d.tsv && d.tsv.spark_abs ? `<button id="copy-spark-abs" class="primary">Copy new spark table</button>` : ""}
           ${d.tsv && d.tsv.spark ? `<button id="copy-spark-tsv">Copy changes (Add)</button>` : ""}
         </div>
@@ -887,6 +907,8 @@ function wireReport(d) {
   const ca = $("#copy-spark-abs");
   if (ca) ca.onclick = () => copyText(d.tsv.spark_abs,
     "Copied your COMPLETE new spark table. Select the whole table (top-left cell) and plain-paste (Ctrl+V) — cells the log didn't cover keep your original values.");
+  const fp = $("#spark-fp");
+  if (fp) fp.onchange = e => setFindPower(e.target.checked);
   const te = $("#to-expert");
   if (te) te.onclick = () => setSkill("expert");
   const cr = $("#cov-ref-btn");
