@@ -146,6 +146,9 @@ input, select { font: inherit; color: var(--text); background: var(--bg-2);
 .axes-group { padding: 12px 0; }
 .axes-group + .axes-group { border-top: 1px solid var(--line); }
 .axes-group-label { display: block; font-weight: 570; font-size: 13.5px; margin-bottom: 8px; }
+.tbl-onfile { font-size: 12px; color: var(--text-3); margin: -4px 0 8px; }
+.tbl-onfile.has { color: var(--opp); }
+.tbl-onfile.has::before { content: "✓ "; }
 .axes-manual { margin-top: 12px; }
 .axes-manual summary { cursor: pointer; font-size: 12.5px; color: var(--accent); font-weight: 540;
   list-style: none; }
@@ -159,8 +162,10 @@ input, select { font: inherit; color: var(--text); background: var(--bg-2);
 .axes-status.warn { color: var(--warn); }
 @media (max-width: 680px) { .axes-grid { grid-template-columns: 1fr; } }
 
-.switches { flex-direction: row; gap: 22px; align-items: center; }
-.switch { display: flex; gap: 8px; align-items: center; font-weight: 500; }
+.switches { flex-direction: column; gap: 10px; align-items: flex-start; }
+.switch { display: flex; gap: 8px; align-items: baseline; font-weight: 500; }
+.switch input { vertical-align: middle; }
+.switch .hint { margin-left: 2px; }
 .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
 
 /* ============ onboarding ============ */
@@ -291,6 +296,12 @@ details.why .why-body { color: var(--text-2); font-size: 13.5px; background: var
 .chart-card .ch-actions { margin-left: auto; display: flex; gap: 8px; }
 .chart-box { width: 100%; }
 .spark-advisory { font-size: 13px; margin: 8px 0 0; }
+.spark-tablenote { font-size: 13px; margin: 8px 0 0; color: var(--warn); }
+.spark-clean { display: flex; gap: 12px; align-items: flex-start;
+  background: var(--opp-bg); border: 1px solid color-mix(in srgb, var(--opp) 30%, var(--line));
+  border-radius: var(--radius-sm); padding: 14px 16px; margin-top: 6px; }
+.spark-clean-ico { color: var(--opp); font-weight: 700; font-size: 18px; line-height: 1.2; }
+.spark-clean .sub { margin: 6px 0 0; font-size: 13px; }
 #ve-heatmap, #spark-heatmap { height: 380px; }
 #maf-chart { height: 200px; }
 #timeline-chart { height: 340px; }

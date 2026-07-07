@@ -78,6 +78,7 @@ def _opts_from_payload(p: dict) -> tuple[str | None, core.SessionOpts]:
         architecture=p.get("architecture") or None,
         ve_axes=core.clean_ve_axes(p.get("ve_axes")),
         spark_axes=core.clean_ve_axes(p.get("spark_axes")),
+        tables=core.clean_tables(p.get("tables")),
     )
     preset = p.get("engine_preset")
     mods = list(p.get("mods", []) or [])
@@ -128,6 +129,11 @@ def _vehicle_record(state: GuiState, name: str) -> dict | None:
             # the custom table axes MUST round-trip to the frontend, or the saved
             # axes never reach analyze and the grid falls back to default bins.
             "ve_axes": rec.get("ve_axes"), "spark_axes": rec.get("spark_axes"),
+            # full pasted tune tables round-trip too (analyze sends them back);
+            # history stays server-side -- only its size is surfaced.
+            "tables": rec.get("tables"),
+            "table_history_count": len(rec.get("table_history", [])),
+            "analyses_since_paste": rec.get("analyses_since_paste", 0),
             "history": rec.get("history", [])}
 
 
@@ -307,6 +313,14 @@ def make_handler(state: GuiState, token: str):
                     rec["history"] = hist[-20:]
                     rec["stage"] = cr.stage
                     rec["updated"] = datetime.datetime.now().isoformat(timespec="seconds")
+                    # staleness: count analyses since the tables were last pasted.
+                    # >=2 means the user has analyzed (and likely edited the tune)
+                    # since the paste -- the GUI prompts a re-paste.
+                    if rec.get("tables"):
+                        n = int(rec.get("analyses_since_paste", 0)) + 1
+                        rec["analyses_since_paste"] = n
+                        d["tables_meta"] = {"analyses_since_paste": n,
+                                            "stale": n >= 2}
                     garage.upsert(state.data, name, rec)
                     state.save_garage()
                 return self._json(d)
@@ -364,6 +378,29 @@ def make_handler(state: GuiState, token: str):
                 if old:
                     rec["history"] = old.get("history", [])
                     rec["stage"] = old.get("stage")
+                    # Tune-table versioning: keep old tables when none were
+                    # (re)pasted; when a table's VALUES changed, archive the
+                    # prior version (capped) and reset the staleness counter.
+                    old_tables = old.get("tables") or {}
+                    new_tables = rec.get("tables") or {}
+                    hist = list(old.get("table_history", []))
+                    changed = False
+                    for key, old_t in old_tables.items():
+                        new_t = new_tables.get(key)
+                        if new_t is None:
+                            new_tables[key] = old_t          # keep what's on file
+                        elif new_t.get("values") != old_t.get("values"):
+                            changed = True
+                            hist.append(dict(old_t, table=key))
+                    for key in new_tables:
+                        if key not in old_tables and new_tables[key].get("values"):
+                            changed = True                   # first paste counts too
+                    rec["tables"] = new_tables or None
+                    rec["table_history"] = hist[-10:]
+                    rec["analyses_since_paste"] = 0 if changed \
+                        else old.get("analyses_since_paste", 0)
+                elif rec.get("tables"):
+                    rec["analyses_since_paste"] = 0
                 garage.upsert(state.data, name, rec)
                 state.save_garage()
                 return self._json({"ok": True, "vehicle": _vehicle_record(state, name)})

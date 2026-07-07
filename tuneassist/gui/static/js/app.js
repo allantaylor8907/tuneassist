@@ -313,6 +313,17 @@ function cascade(changed) {
   const keepE = $("#s-engine").value;
   fill($("#s-engine"), [["custom", "Custom / other"]].concat(engines.map(e => [e, e])));
   if ([...$("#s-engine").options].some(o => o.value === keepE)) $("#s-engine").value = keepE;
+
+  // tune-table group labels follow the platform/generation the user actually
+  // sees in their software (Gen 3 Main VE vs Gen 4+ VVE; Holley Base Fuel /
+  // Timing; MAF is an HP Tuners concept only)
+  const arch = gens.length ? $("#s-arch").value : "";
+  $("#tbl-ve-label").textContent = holley ? "Base Fuel Table"
+    : arch.includes("gen3") ? "Main VE table"
+    : (arch && arch !== "auto") ? "VVE (Virtual VE) table"
+    : "VE table (Main VE / VVE)";
+  $("#tbl-spark-label").textContent = holley ? "Timing Table" : "High Octane Spark table";
+  $("#f-tbl-maf").classList.toggle("hidden", holley);
 }
 $("#s-platform").addEventListener("change", () => cascade("platform"));
 $("#s-product").addEventListener("change", () => cascade("product"));
@@ -358,8 +369,8 @@ function openSetup(vehicle) {
     $$("#s-mods .modchip").forEach(c => c.classList.remove("on"));
   }
 
-  // custom VE axes (stored as arrays) -> manual fields; the table paste box is
-  // an input convenience, so it always starts empty.
+  // custom VE axes (stored as arrays) -> manual fields; the table paste boxes
+  // are input conveniences, so they always start empty ("paste to replace").
   const ax = (vehicle && vehicle.ve_axes) || null;
   $("#s-axis-table").value = "";
   $("#s-axis-rpm").value = ax && ax.rpm ? ax.rpm.join(", ") : "";
@@ -370,7 +381,26 @@ function openSetup(vehicle) {
   $("#s-spark-axis-rpm").value = sax && sax.rpm ? sax.rpm.join(", ") : "";
   $("#s-spark-axis-map").value = sax && sax.map ? sax.map.join(", ") : "";
   $("#spark-axes-manual").open = !!sax;
-  $("#axes-adv").open = !!(ax || sax);
+  $("#s-maf-table").value = "";
+
+  // what's already on file (values captured, when, prior versions)
+  const tables = (vehicle && vehicle.tables) || {};
+  const histN = (vehicle && vehicle.table_history_count) || 0;
+  function onfile(el, t, kind) {
+    if (!t) { el.textContent = ""; el.classList.remove("has"); return; }
+    const dims = kind === "row" ? `${(t.hz || []).length} points`
+      : `${(t.rpm || []).length}×${(t.map || []).length}`;
+    const vals = (kind === "row" ? t.values : t.values) ? "with values" : "axes only";
+    const when = t.pasted ? ` · pasted ${String(t.pasted).slice(0, 10)}` : "";
+    el.textContent = `On file: ${dims} ${vals}${when}` +
+      (histN ? ` · ${histN} older version${histN > 1 ? "s" : ""} kept` : "");
+    el.classList.add("has");
+  }
+  onfile($("#tbl-ve-onfile"), tables.ve, "grid");
+  onfile($("#tbl-spark-onfile"), tables.spark, "grid");
+  onfile($("#tbl-maf-onfile"), tables.maf, "row");
+
+  $("#axes-adv").open = !!(ax || sax || tables.ve || tables.spark || tables.maf);
   updateAxesStatus();
 
   $("#setup-onboard").classList.toggle("hidden", !S.onboarding);
@@ -411,6 +441,17 @@ function collectSetup() {
     find_power: $("#s-power").checked,
     ve_axes: axesFromForm("#s-axis-table", "#s-axis-rpm", "#s-axis-map"),
     spark_axes: axesFromForm("#s-spark-axis-table", "#s-spark-axis-rpm", "#s-spark-axis-map"),
+    // full-table pastes (values captured); omitted keys keep what's on file
+    tables: (() => {
+      const t = {};
+      const ve = $("#s-axis-table").value.trim();
+      const sp = $("#s-spark-axis-table").value.trim();
+      const mf = $("#s-maf-table").value.trim();
+      if (ve) t.ve = { table: ve };
+      if (sp) t.spark = { table: sp };
+      if (mf) t.maf = { table: mf };
+      return Object.keys(t).length ? t : null;
+    })(),
   };
 }
 
@@ -426,10 +467,11 @@ function parseAxis(text) {
   const nums = (String(text || "").match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
   return [...new Set(nums)];
 }
-/* parse a whole "Copy with Axis" table -> {rpm, map} (mirrors core.parse_ve_table) */
+/* parse a whole "Copy with Axis" table -> {rpm, map, hasValues}
+   (mirrors core.parse_ve_table, which also captures the cell values) */
 function parseVeTable(text) {
   const lines = String(text || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  let rpm = null; const map = [];
+  let rpm = null; const map = []; const rowLens = [];
   for (const ln of lines) {
     const toks = ln.split(/[\t,;]+|\s+/).filter(Boolean);
     const nums = toks.map(Number).filter(n => !isNaN(n));
@@ -439,9 +481,11 @@ function parseVeTable(text) {
     if (isHeader && rpm === null) { rpm = nums; continue; }
     if (!nums.length) continue;
     map.push(nums[0]);
+    rowLens.push(nums.length - 1);
   }
   if (!rpm || rpm.length < 2 || map.length < 2) return null;
-  return { rpm, map };
+  const hasValues = rowLens.length > 0 && rowLens.every(n => n === rpm.length);
+  return { rpm, map, hasValues };
 }
 function updateAxesGroup(tableSel, rpmSel, mapSel, statusSel) {
   const el = $(statusSel);
@@ -463,16 +507,40 @@ function updateAxesGroup(tableSel, rpmSel, mapSel, statusSel) {
     el.textContent = "Need at least 2 values on each axis.";
     el.className = "axes-status warn"; return;
   }
+  const p2 = fromTable ? parseVeTable(table) : null;
   el.textContent = `✓ ${fromTable ? "Read from your table: " : ""}${r.length} RPM × ${m.length} MAP ` +
-    `= ${r.length * m.length} cells — the grid and copied TSV will match your table.`;
+    (p2 && p2.hasValues
+      ? `with all ${r.length * m.length} cell values — grids match your table, and recommendations can go absolute.`
+      : `= ${r.length * m.length} cells — the grid and copied TSV will match your table.`);
   el.className = "axes-status ok";
+}
+function updateMafStatus() {
+  const el = $("#maf-axes-status");
+  const text = $("#s-maf-table").value.trim();
+  if (!text) { el.textContent = ""; el.className = "axes-status"; return; }
+  // mirror core.parse_maf_table: column pairs, or a Hz row over a value row
+  const rows = text.split(/\r?\n/).map(l =>
+    (l.match(/-?\d+(?:\.\d+)?/g) || []).map(Number)).filter(r => r.length);
+  let n = 0;
+  if (rows.length >= 4 && rows.every(r => r.length === 2)) n = rows.length;
+  else if (rows.length === 2 && rows[0].length === rows[1].length && rows[0].length >= 4)
+    n = rows[0].length;
+  if (n) {
+    el.textContent = `✓ Read ${n} MAF points with values — the MAF row will match your calibration.`;
+    el.className = "axes-status ok";
+  } else {
+    el.textContent = "Couldn't read that as a MAF calibration — expect Hz + value pairs per line, or a Hz row over a value row.";
+    el.className = "axes-status warn";
+  }
 }
 function updateAxesStatus() {
   updateAxesGroup("#s-axis-table", "#s-axis-rpm", "#s-axis-map", "#axes-status");
   updateAxesGroup("#s-spark-axis-table", "#s-spark-axis-rpm", "#s-spark-axis-map", "#spark-axes-status");
+  updateMafStatus();
 }
 ["#s-axis-table", "#s-axis-rpm", "#s-axis-map",
- "#s-spark-axis-table", "#s-spark-axis-rpm", "#s-spark-axis-map"].forEach(s =>
+ "#s-spark-axis-table", "#s-spark-axis-rpm", "#s-spark-axis-map",
+ "#s-maf-table"].forEach(s =>
   $(s).addEventListener("input", updateAxesStatus));
 
 /* ---------- analyze ---------- */
@@ -502,6 +570,7 @@ function analyzeOpts() {
     mods: (v.profile && v.profile.mods) || [],
     ve_axes: v.ve_axes || null,                // bin the grids to this car's tables
     spark_axes: v.spark_axes || null,
+    tables: v.tables || null,                  // full tables -> table-aware spark
   };
 }
 
@@ -595,10 +664,23 @@ function showReport(d) {
   renderJourney(d.stage, d.journey);
   const rep = $("#report");
   rep.classList.remove("hidden");
-  rep.innerHTML = buildVerdict(d) + buildCoverage(d) + buildFindings(d) + buildChartShells(d);
+  rep.innerHTML = buildVerdict(d) + buildStaleTables(d) + buildCoverage(d)
+                + buildFindings(d) + buildChartShells(d);
   wireReport(d);
   renderCharts();
   rep.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function buildStaleTables(d) {
+  const tm = d.tables_meta;
+  if (!tm || !tm.stale) return "";
+  return `<div class="coverage warn">
+    <div class="cov-head"><span class="cov-ico">⚠</span>
+      <span>Your saved tune tables were pasted ${tm.analyses_since_paste} analyses ago —
+      if you've applied changes since, the current→target numbers are working from an old
+      copy.</span>
+      <button class="linklike cov-ref" id="stale-edit-btn">re-paste tables</button></div>
+  </div>`;
 }
 
 function buildVerdict(d) {
@@ -684,27 +766,56 @@ function buildChartShells(d) {
     </div>`;
   }
   if (d.spark && d.spark.can_run && d.spark.cells && d.spark.cells.length) {
+    const sp = d.spark;
     const axN = d.spark_axes ? `${d.spark_axes.rpm.length}×${d.spark_axes.map.length}` : null;
-    const sub = axN ? `degrees to add (+) / pull (−) — matched to your spark table (${axN})`
-                    : `degrees to add (+) / pull (−) per RPM × MAP cell`;
-    html += `
+    const hasWork = sp.cells.some(c => c.action && c.action !== "OK");
+    const sub = sp.has_table
+      ? `absolute: current → target, matched to your spark table (${axN}) — ADDs capped at your build's ceiling`
+      : axN ? `degrees to add (+) / pull (−) — matched to your spark table (${axN})`
+            : `degrees to add (+) / pull (−) per RPM × MAP cell`;
+    const tableNotes = (sp.table_findings || []).map(t =>
+      `<p class="sub spark-tablenote">⚠ ${esc(t)}</p>`).join("");
+    if (!hasWork) {
+      // nothing to change: say it in words instead of a grid of zeros
+      const powerHint = sp.find_power
+        ? "Find power is on, but no cells had the load + clean AFR/IAT needed to suggest an add — get more time at WOT."
+        : "Want to hunt for MBT? Turn on <strong>Find power</strong> in this car's setup (Edit) and it will suggest careful +1° adds where the data says it's safe.";
+      html += `
+    <div class="chart-card expert-only">
+      <div class="ch-head"><h3>Spark / timing</h3><span class="ch-sub">${sub}</span></div>
+      <div class="spark-clean">
+        <span class="spark-clean-ico">✓</span>
+        <div><strong>No knock anywhere in this log — timing is holding at its current advance.</strong>
+        <p class="sub">${powerHint}</p></div>
+      </div>
+      ${tableNotes}
+      ${sp.advisory ? `<p class="sub spark-advisory">${esc(sp.advisory)}</p>` : ""}
+    </div>`;
+    } else {
+      html += `
     <div class="chart-card expert-only">
       <div class="ch-head">
         <h3>Spark / timing change</h3><span class="ch-sub">${sub}</span>
         <div class="ch-actions">
-          ${d.tsv && d.tsv.spark ? `<button id="copy-spark-tsv">Copy spark (TSV)</button>` : ""}
+          ${d.tsv && d.tsv.spark_abs ? `<button id="copy-spark-abs" class="primary">Copy new spark table</button>` : ""}
+          ${d.tsv && d.tsv.spark ? `<button id="copy-spark-tsv">Copy changes (Add)</button>` : ""}
         </div>
       </div>
       <div id="spark-heatmap" class="chart-box"></div>
-      ${d.spark.advisory ? `<p class="sub spark-advisory">${esc(d.spark.advisory)}</p>` : ""}
+      ${tableNotes}
+      ${sp.advisory ? `<p class="sub spark-advisory">${esc(sp.advisory)}</p>` : ""}
       <details class="why expander"><summary>What am I looking at?</summary>
         <div class="why-body">Knock-governed timing moves per cell. <strong>Red = pull timing</strong>
         (the engine knocked there — the pull includes a safety margin); <strong>green = room to add</strong>
-        (only shown if you enabled "find power"). A cell tagged LEAN or HOT means fix fueling or charge
-        temp <em>before</em> touching timing. Paste into your spark table with Paste Special →
-        <strong>Add</strong> (these are degrees, not a percentage).</div>
+        (only with "Find power" on, and ${sp.has_table ? "capped at the advisory ceiling for your build"
+        : "never more than +1° per pass"}). A cell tagged LEAN or HOT means fix fueling or charge
+        temp <em>before</em> touching timing.
+        ${sp.has_table
+          ? "<strong>Copy new spark table</strong> gives your complete table with the changes applied — paste it over the whole table (plain paste). Cells the log didn't cover keep your original values."
+          : "Paste the changes into your spark table with Paste Special → <strong>Add</strong> (degrees, not a percentage)."}</div>
       </details>
     </div>`;
+    }
   }
   if (d.maf && d.maf.cells && d.maf.cells.length) {
     html += `
@@ -773,10 +884,20 @@ function wireReport(d) {
   if (cs) cs.onclick = () => copyText(d.tsv.spark, d.spark_axes
     ? "Copied — laid out to match your spark table. In VCM Editor: click the top-left cell → Paste Special → Add (degrees)."
     : "Copied the spark grid. Paste into your spark table with Paste Special → Add (these are degrees, not %).");
+  const ca = $("#copy-spark-abs");
+  if (ca) ca.onclick = () => copyText(d.tsv.spark_abs,
+    "Copied your COMPLETE new spark table. Select the whole table (top-left cell) and plain-paste (Ctrl+V) — cells the log didn't cover keep your original values.");
   const te = $("#to-expert");
   if (te) te.onclick = () => setSkill("expert");
   const cr = $("#cov-ref-btn");
   if (cr) cr.onclick = openChannelsModal;
+  const se = $("#stale-edit-btn");
+  if (se) se.onclick = () => {
+    const v = S.vehicles.find(x => x.name === (S.current && S.current.name));
+    openSetup(v || S.current);
+    $("#axes-adv").open = true;
+    $("#axes-adv").scrollIntoView({ behavior: "smooth", block: "center" });
+  };
 }
 async function copyText(text, msg) {
   try { await navigator.clipboard.writeText(text); toast(msg, "ok"); }
@@ -862,7 +983,8 @@ function sparkHeatmap(el, d) {
   const cells = d.spark.cells;
   const rpmL = axisSort([...new Set(cells.map(c => c.rpm))]);
   const mapL = axisSort([...new Set(cells.map(c => c.map))]);
-  const data = cells.map(c => [mapL.indexOf(c.map), rpmL.indexOf(c.rpm), c.deg, c.action || ""]);
+  const data = cells.map(c => [mapL.indexOf(c.map), rpmL.indexOf(c.rpm), c.deg,
+                               c.action || "", c.current, c.target]);
   const lim = Math.max(2, ...cells.map(c => Math.abs(c.deg)));
   const cellW = (el.clientWidth - 182) / Math.max(1, mapL.length);
   const showLabels = cellW >= 46;
@@ -881,9 +1003,11 @@ function sparkHeatmap(el, d) {
       textStyle: { color: C.text3, fontSize: 11 },
       inRange: { color: [C.crit, C.bg2, C.opp] } },
     tooltip: { confine: true, formatter: p => {
-      const v = p.value[2], act = p.value[3];
-      return `<b>${rpmL[p.value[1]]} RPM × ${mapL[p.value[0]]} kPa</b><br>` +
-             `${v > 0 ? "+" : ""}${v}°${act ? " · " + act : ""}`;
+      const v = p.value[2], act = p.value[3], cur = p.value[4], tgt = p.value[5];
+      let line = `${v > 0 ? "+" : ""}${v}°${act ? " · " + act : ""}`;
+      if (cur != null && tgt != null)
+        line += `<br><span style="opacity:.8">now ${cur}° → set <b>${tgt}°</b></span>`;
+      return `<b>${rpmL[p.value[1]]} RPM × ${mapL[p.value[0]]} kPa</b><br>` + line;
     } },
     series: [{ type: "heatmap", data, label: { show: showLabels, fontSize: 10,
       color: C.text, formatter: p => (p.value[2] > 0 ? "+" : "") + p.value[2].toFixed(1) },

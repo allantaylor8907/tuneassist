@@ -123,6 +123,29 @@ def preset_to_profile(label: str, power_adder: str = "na", mods=None):
     return None
 
 
+def spark_bounds(profile: EngineProfile | None, stoich: float = 14.7) -> tuple:
+    """The numeric WOT-total-timing sanity window (lo, hi) behind
+    spark_guidance()'s advisory text -- used to CAP table-aware spark ADDs.
+    Mirrors the same rules: boost ~10-18, nitrous ~20-26 (shot-dependent),
+    NA 24-28 shifted by compression, +2 on E85. A ceiling, never a target."""
+    e85 = stoich < 11
+    pa = (profile.power_adder if profile else "na") or "na"
+    if pa == "boost":
+        return (10, 18)
+    if pa == "nitrous":
+        return (20, 26)
+    lo, hi = 24, 28
+    cr = profile.compression if profile else None
+    if cr is not None:
+        if cr >= 11.0:
+            lo, hi = 22, 25
+        elif cr <= 9.7:
+            lo, hi = 25, 29
+    if e85:
+        lo, hi = lo + 2, hi + 2
+    return (lo, hi)
+
+
 def spark_guidance(profile: EngineProfile | None, stoich: float = 14.7):
     """Return (advisory_str, pullback_conditions[list]).
 

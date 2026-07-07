@@ -155,6 +155,44 @@ def test_keepalive_second_post_reads_its_own_body():
             httpd.shutdown()
 
 
+def test_tables_round_trip_history_and_staleness():
+    def spark_tbl(base):
+        rows = ["%\t800\t1600\t2400\t3200\trpm"]
+        for mp in (20, 40, 60, 80):
+            rows.append("\t".join([str(mp)] + [str(base + mp * 0.05)] * 4))
+        return "\n".join(rows) + "\nkPa"
+    with tempfile.TemporaryDirectory() as d:
+        httpd, url, state = start_server(os.path.join(d, "g.json"))
+        try:
+            get, post = _client(url)
+            v = post("api/garage/upsert", {"name": "tt", "platform": "gm",
+                     "stoich": 14.7, "tables": {"spark": {"table": spark_tbl(20)}}})
+            t = v["vehicle"]["tables"]["spark"]
+            assert t["values"] and t["pasted"] and len(t["rpm"]) == 4
+            assert v["vehicle"]["analyses_since_paste"] == 0
+
+            # analyzing bumps the staleness counter; the 2nd analysis flags stale
+            d1 = post("api/analyze", {"path": RIDE, "vehicle": "tt", "stoich": 14.7})
+            assert d1["tables_meta"]["analyses_since_paste"] == 1
+            assert d1["tables_meta"]["stale"] is False
+            d2 = post("api/analyze", {"path": RIDE, "vehicle": "tt", "stoich": 14.7})
+            assert d2["tables_meta"]["stale"] is True
+
+            # upsert WITHOUT tables keeps what's on file (and the counter)
+            v2 = post("api/garage/upsert", {"name": "tt", "platform": "gm", "stoich": 14.7})
+            assert v2["vehicle"]["tables"]["spark"]["values"] == t["values"]
+            assert v2["vehicle"]["analyses_since_paste"] == 2
+
+            # re-pasting CHANGED values archives the old version + resets staleness
+            v3 = post("api/garage/upsert", {"name": "tt", "platform": "gm",
+                      "stoich": 14.7, "tables": {"spark": {"table": spark_tbl(22)}}})
+            assert v3["vehicle"]["table_history_count"] == 1
+            assert v3["vehicle"]["analyses_since_paste"] == 0
+            assert v3["vehicle"]["tables"]["spark"]["values"] != t["values"]
+        finally:
+            httpd.shutdown()
+
+
 def test_compare_endpoint():
     with tempfile.TemporaryDirectory() as d:
         httpd, url, state = start_server(os.path.join(d, "g.json"))

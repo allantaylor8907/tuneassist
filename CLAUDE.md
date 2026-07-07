@@ -57,8 +57,16 @@ tunable state.
   Tested (synthetic crank logs).
 - `holley.py` — Holley CSV ingest + Learn/CL-comp-based correction.
 - `spark.py` — knock-governed timing analysis (DESIGN §10). Refuses without a knock
-  channel; PULLs on knock (+margin), cautious opt-in ADDs for power; flags LEAN/HOT
-  root causes. Tested.
+  channel; PULLs on knock (+margin), cautious opt-in ADDs for power (`find_power`);
+  flags LEAN/HOT root causes. **Table-aware** when the user pastes their spark
+  table WITH values (`SessionOpts.tables["spark"]`): recommendations turn absolute
+  (current -> target per cell), ADDs cap at `profile.spark_bounds()`'s ceiling
+  (AT_CEILING action), `scan_spark_table` sanity-checks the table itself (WOT
+  cells above the build ceiling; cam-aware idle-region check via cams guidance),
+  and a per-cell delivered-vs-table deficit note localizes what knock/IAT/torque
+  management is eating. `core.spark_abs_tsv` emits the COMPLETE new table
+  (uncovered cells keep the ORIGINAL value, never 0) for a plain full-table
+  paste; `tsv.spark` stays deltas for Paste Special -> Add. Tested.
 - `diagnostics.py` — **pattern-based symptom→cause→correction engine** (DESIGN
   §12). `diagnose(df, col, cfg, platform, profile) → [Finding]`: lean/rich cruise,
   vacuum leak, bank imbalance, WB-vs-NB (GM-only), WOT shortfall/lean/rich,
@@ -110,7 +118,16 @@ tunable state.
   cell-for-cell. `parse_axis` preserves the user's paste order (Holley MAP is
   descending, VCM ascending); `parse_ve_table` reads a whole "Copy with Axis"
   paste (RPM header row + MAP-led data rows) so the GUI takes one paste instead
-  of typed breakpoints; `clean_ve_axes` accepts `{table}` or `{rpm,map}`.
+  of typed breakpoints; `clean_ve_axes` accepts `{table}` or `{rpm,map}`. **Full tune tables**
+  (`SessionOpts.tables` = ve/spark/maf via `clean_tables`): `parse_ve_table` also
+  captures the cell VALUES; `parse_maf_table` reads the 1-D MAF calibration
+  (column-pairs or row-pair); `table_slots(platform, arch)` names what the user
+  sees (Gen 3 Main VE / Gen 4+ VVE / Holley Base Fuel + Timing; MAF is
+  HPT-only). Tables persist in the garage; axes derive from them automatically.
+  The GUI server versions them: an upsert with CHANGED values archives the prior
+  copy to `table_history` (cap 10) and resets `analyses_since_paste`; each
+  analyze of a saved car increments it, and `to_dict`'s `tables_meta.stale`
+  (>=2) drives the GUI's "re-paste your tables" banner.
 - `legacy/` (repo root) — **the retired Textual TUI**, preserved per the
   retention policy: `tui.py`, `panels.py`, `demo.py`, `demo-serve/`, and their
   pilot-harness tests. Retired at the v2 cutover (last shipped in v0.1.21) so

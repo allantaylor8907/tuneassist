@@ -48,6 +48,11 @@ class SessionOpts:
     # spark are separate tables with separate axes.
     ve_axes: dict | None = None
     spark_axes: dict | None = None
+    # Full pasted tune tables (axes + cell values + pasted timestamp), keyed
+    # ve/spark/maf -- see clean_tables(). Values unlock the table-aware features
+    # (absolute spark targets, ceiling caps, table sanity checks); when present,
+    # the axes above are derived from them automatically.
+    tables: dict | None = None
 
 
 def opts_to_record(platform: str, opts: "SessionOpts") -> dict:
@@ -64,6 +69,7 @@ def opts_to_record(platform: str, opts: "SessionOpts") -> dict:
         "find_power": opts.find_power,
         "ve_axes": clean_ve_axes(opts.ve_axes),
         "spark_axes": clean_ve_axes(opts.spark_axes),
+        "tables": clean_tables(opts.tables),
         "cam": (None if cam is None else {
             "intake_dur_050": cam.intake_dur_050, "exhaust_dur_050": cam.exhaust_dur_050,
             "lsa": cam.lsa, "lift": cam.lift}),
@@ -89,7 +95,8 @@ def record_to_opts(record: dict):
                        make=record.get("make") or d_make,
                        architecture=record.get("architecture") or d_arch,
                        ve_axes=clean_ve_axes(record.get("ve_axes")),
-                       spark_axes=clean_ve_axes(record.get("spark_axes")))
+                       spark_axes=clean_ve_axes(record.get("spark_axes")),
+                       tables=clean_tables(record.get("tables")))
     cam = record.get("cam")
     if cam:
         opts.cam_spec = cams.CamSpec(**cam)
@@ -458,6 +465,7 @@ class CoreResult:
     timeseries: dict | None = None         # downsampled traces (GUI timeline)
     ve_axes: dict | None = None            # the custom VE table axes used, if any
     spark_axes: dict | None = None         # the custom spark table axes used, if any
+    tables: dict | None = None             # the cleaned pasted tune tables, if any
     channel_coverage: dict | None = None   # logged vs missing channels for this log
 
     @property
@@ -523,8 +531,11 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
     # cell-for-cell with the table in their tuning software. Use a copy of the cfg
     # so ONLY the fuel correction is rebinned -- spark and MAF have their own,
     # different table axes and must keep the default bins.
-    ve_axes = clean_ve_axes(opts.ve_axes)
-    spark_axes = clean_ve_axes(opts.spark_axes)   # spark is its own table/axes
+    tables = clean_tables(opts.tables)
+    ve_axes = clean_ve_axes(opts.ve_axes) or (
+        clean_ve_axes(tables.get("ve")) if tables and tables.get("ve") else None)
+    spark_axes = clean_ve_axes(opts.spark_axes) or (      # spark is its own table
+        clean_ve_axes(tables.get("spark")) if tables and tables.get("spark") else None)
     corr_cfg = cfg
     if ve_axes:
         import copy as _copy
@@ -565,10 +576,13 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
                     spark_cfg.rpm_bins = _axis_edges(spark_axes["rpm"])
                     spark_cfg.map_bins = _axis_edges(spark_axes["map"])
                 spark = analyze_spark(df, spark_cfg, find_power=opts.find_power,
-                                      profile=opts.profile)
+                                      profile=opts.profile,
+                                      spark_table=(tables or {}).get("spark"),
+                                      cam_points=opts.cam_points)
                 if spark_axes and spark is not None and spark.can_run:
                     _relabel_to_breakpoints(spark, spark_axes["rpm"], spark_axes["map"],
-                                            names=("change", "action", "samples"))
+                                            names=("change", "action", "samples",
+                                                   "current", "target"))
                     notes.append(
                         f"Spark grid binned to your spark table axes "
                         f"({len(spark_axes['rpm'])} RPM x {len(spark_axes['map'])} MAP) -- "
@@ -671,7 +685,7 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
                       result=result, spark=spark, maf=maf, prescription=rx,
                       empty_reason=empty_reason, findings=findings, notes=notes,
                       timeseries=ts, ve_axes=ve_axes, spark_axes=spark_axes,
-                      channel_coverage=coverage)
+                      tables=tables, channel_coverage=coverage)
 
 
 # --------------------------------------------------------------------------
@@ -708,17 +722,20 @@ def parse_axis(value) -> list:
 
 def parse_ve_table(text) -> dict | None:
     """Parse a whole table pasted via 'Copy with Axis' (VCM Editor) into
-    {'rpm': [...], 'map': [...]} -- one paste, both axes, no typing.
+    {'rpm': [...], 'map': [...], 'values': [[...]] | None} -- one paste: both
+    axes AND the cell values (values power the table-aware spark/VE features;
+    axes alone still work for binning).
 
     The format: a header row of RPM values across the top (often led by '%' and
     trailed by 'rpm'), then one data row per MAP breakpoint where the FIRST value
-    is the MAP, then a trailing 'kPa' label. We only need the two axes (the cell
-    values are ignored -- we compute our own correction). Order is preserved."""
+    is the MAP and the rest are that row's cells, then a trailing 'kPa' label.
+    Order is preserved (VCM ascending, Holley descending both survive)."""
     if not isinstance(text, str) or not text.strip():
         return None
     import re
     header_rpm = None
     map_bps: list = []
+    rows: list = []
     for ln in text.splitlines():
         if not ln.strip():
             continue
@@ -744,9 +761,99 @@ def parse_ve_table(text) -> dict | None:
         if not nums:                           # a label-only line like 'kPa'
             continue
         map_bps.append(nums[0])                # leading value of each data row = MAP
+        rows.append(nums[1:])                  # the rest of the row = cell values
     if not header_rpm or len(header_rpm) < 2 or len(map_bps) < 2:
         return None
-    return {"rpm": header_rpm, "map": map_bps}
+    # values only count when EVERY row carries a full set of cells
+    values = rows if rows and all(len(r) == len(header_rpm) for r in rows) else None
+    return {"rpm": header_rpm, "map": map_bps, "values": values}
+
+
+def parse_maf_table(text) -> dict | None:
+    """Parse a pasted 1-D MAF calibration (Airflow vs Frequency) into
+    {'hz': [...], 'values': [...]}. Accepts either layout: two COLUMNS
+    (one 'Hz  value' pair per line, the VCM copy-with-axis shape) or two ROWS
+    (Hz header row then a value row)."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+    import re
+    numeric_rows = []
+    for ln in text.splitlines():
+        toks = [t for t in re.split(r"[\t,;]+|\s+", ln.strip()) if t]
+        nums = []
+        for t in toks:
+            try:
+                nums.append(float(t))
+            except ValueError:
+                pass
+        if nums:
+            numeric_rows.append(nums)
+    if len(numeric_rows) >= 4 and all(len(r) == 2 for r in numeric_rows):
+        hz = [r[0] for r in numeric_rows]      # column pairs: Hz, value
+        vals = [r[1] for r in numeric_rows]
+    elif len(numeric_rows) == 2 and len(numeric_rows[0]) == len(numeric_rows[1]) \
+            and len(numeric_rows[0]) >= 4:
+        hz, vals = numeric_rows                # row pair: Hz header + values
+    else:
+        return None
+    if len(hz) < 4 or hz != sorted(hz):        # a MAF axis is ascending frequency
+        return None
+    return {"hz": hz, "values": vals}
+
+
+# The tune tables we capture per platform/generation. `key` is the garage slot;
+# labels follow what the user sees in their software (Gen 3 Main VE vs Gen 4+
+# VVE; Holley Base Fuel / Timing). MAF is HP Tuners-only (Holley has no MAF).
+def table_slots(platform: str, architecture: str | None) -> list:
+    arch = architecture or ""
+    if platform == "holley":
+        return [{"key": "ve", "label": "Base Fuel Table", "kind": "grid"},
+                {"key": "spark", "label": "Timing Table", "kind": "grid"}]
+    gen3 = "gen3" in arch
+    return [{"key": "ve",
+             "label": "Main VE table" if gen3 else "VVE (Virtual VE) table",
+             "kind": "grid"},
+            {"key": "spark", "label": "High Octane Spark table", "kind": "grid"},
+            {"key": "maf", "label": "MAF Airflow vs Frequency", "kind": "row"}]
+
+
+def clean_tables(tables) -> dict | None:
+    """Normalize a {'ve': .., 'spark': .., 'maf': ..} spec (each entry either a
+    raw paste under {'table': text} or an already-parsed dict) into clean,
+    validated tables. Entries that don't parse are dropped; None if nothing
+    usable. Grid values are kept only when their shape matches the axes."""
+    if not isinstance(tables, dict) or not tables:
+        return None
+    import datetime
+    out = {}
+    for key in ("ve", "spark"):
+        t = tables.get(key)
+        if not isinstance(t, dict):
+            continue
+        parsed = parse_ve_table(t.get("table")) if t.get("table") else t
+        if not isinstance(parsed, dict):
+            continue
+        axes = clean_ve_axes({"rpm": parsed.get("rpm"), "map": parsed.get("map")})
+        if not axes:
+            continue
+        vals = parsed.get("values")
+        ok_shape = (isinstance(vals, list) and len(vals) == len(axes["map"])
+                    and all(isinstance(r, list) and len(r) == len(axes["rpm"])
+                            for r in vals))
+        out[key] = {"rpm": axes["rpm"], "map": axes["map"],
+                    "values": vals if ok_shape else None,
+                    "pasted": t.get("pasted")
+                              or datetime.datetime.now().isoformat(timespec="seconds")}
+    m = tables.get("maf")
+    if isinstance(m, dict):
+        parsed = parse_maf_table(m.get("table")) if m.get("table") else m
+        if isinstance(parsed, dict) and parsed.get("hz") and parsed.get("values") \
+                and len(parsed["hz"]) == len(parsed["values"]):
+            import datetime as _dt
+            out["maf"] = {"hz": list(parsed["hz"]), "values": list(parsed["values"]),
+                          "pasted": m.get("pasted")
+                                    or _dt.datetime.now().isoformat(timespec="seconds")}
+    return out or None
 
 
 def clean_ve_axes(axes) -> dict | None:
@@ -996,6 +1103,33 @@ def spark_tsv(cr) -> str | None:
     return grid_tsv(grid, "raw")
 
 
+def spark_abs_tsv(cr) -> str | None:
+    """The COMPLETE new spark table -- the user's own values with the targets
+    applied -- in the table's layout (MAP rows x RPM cols). Paste it over the
+    whole table as a plain paste (NOT Paste Special/Add). Cells the log didn't
+    cover keep the ORIGINAL value, never 0, so a full-table paste is safe."""
+    sp = getattr(cr, "spark", None)
+    t = (getattr(cr, "tables", None) or {}).get("spark")
+    if sp is None or not getattr(sp, "can_run", False) or sp.target is None \
+            or not t or not t.get("values"):
+        return None
+    rpm_user, map_user, vals = t["rpm"], t["map"], t["values"]
+    rows = []
+    for mi, mp in enumerate(map_user):
+        row = []
+        for ri, rp in enumerate(rpm_user):
+            v = float(vals[mi][ri])
+            try:
+                tv = sp.target.loc[rp, mp]      # relabeled to user-order breakpoints
+                if tv == tv:                    # not NaN
+                    v = float(tv)
+            except (KeyError, TypeError):
+                pass
+            row.append(_tsv_num(v))
+        rows.append("\t".join(row))
+    return "\n".join(rows)
+
+
 # --------------------------------------------------------------------------
 # JSON serialization (the contract)
 # --------------------------------------------------------------------------
@@ -1089,12 +1223,26 @@ def result_to_dict(cr: CoreResult) -> dict:
             cells = []
             for c in _grid_cells(sp.change, transform=lambda v: round(float(v), 1)):
                 r, m = c["rpm"], c["map"]
-                act = sp.action.loc[_find_interval(sp.action.index, r),
-                                    _find_interval(sp.action.columns, m)]
-                cells.append({"rpm": r, "map": m, "deg": c["value"],
-                              "action": None if pd.isna(act) else str(act)})
+                ri = _find_interval(sp.action.index, r)
+                ci = _find_interval(sp.action.columns, m)
+                act = sp.action.loc[ri, ci]
+                cell = {"rpm": r, "map": m, "deg": c["value"],
+                        "action": None if pd.isna(act) else str(act)}
+                # table-aware: absolute current -> target per cell
+                if sp.current is not None:
+                    cur = sp.current.loc[ri, ci]
+                    tgt = sp.target.loc[ri, ci] if sp.target is not None else None
+                    if not pd.isna(cur):
+                        cell["current"] = round(float(cur), 1)
+                    if tgt is not None and not pd.isna(tgt):
+                        cell["target"] = round(float(tgt), 1)
+                cells.append(cell)
             d["spark"] = {"can_run": True, "knock_cells": sp.knock_cells,
                           "advisory": sp.advisory, "pullback": list(sp.pullback),
+                          "notes": list(sp.notes),
+                          "table_findings": list(sp.table_findings),
+                          "has_table": sp.current is not None,
+                          "find_power": bool(sp.find_power),
                           "unit": "degrees_change", "cells": cells}
 
     rx = cr.prescription
@@ -1116,7 +1264,7 @@ def result_to_dict(cr: CoreResult) -> dict:
         d["channel_coverage"] = cr.channel_coverage
     tsv = {}
     for name, fn in (("correction", correction_tsv), ("maf", maf_tsv),
-                     ("spark", spark_tsv)):
+                     ("spark", spark_tsv), ("spark_abs", spark_abs_tsv)):
         try:
             v = fn(cr)
         except Exception:                  # pragma: no cover - defensive
