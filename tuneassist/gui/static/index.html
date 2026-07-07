@@ -102,20 +102,23 @@
         <div class="field"><label>Camshaft</label><select id="s-cam"></select></div>
         <div class="field wide">
           <details class="axes-adv" id="axes-adv">
-            <summary>Tune table axes
-              <span class="hint">(optional — line the correction grids up with your tune's tables)</span></summary>
+            <summary>Your tune tables
+              <span class="hint">(optional — the more it knows your tune, the smarter the advice)</span></summary>
             <div class="axes-body">
-              <p class="sub">Your tables' breakpoints rarely match our default bins, so a copied
-              correction can land in the wrong cells. Line them up once and the grids + copied TSV
-              match your tables <strong>cell-for-cell</strong>. Easiest in VCM Editor: right-click a
-              table → <strong>Copy with Axis</strong> and paste it below.</p>
+              <p class="sub">Paste your tables straight from the tune (VCM Editor: right-click the
+              table → <strong>Copy with Axis</strong>). We read the breakpoints so every grid and
+              copied TSV lines up <strong>cell-for-cell</strong> — and with the <em>values</em>
+              captured, spark advice becomes absolute (“24° → 25°”), capped at a ceiling for
+              <em>your</em> build, with your table sanity-checked against your cam. Saved with the
+              car; re-paste after you change the tune.</p>
 
               <div class="axes-group">
-                <label class="axes-group-label">VE / fuel table</label>
+                <label class="axes-group-label" id="tbl-ve-label">VE / fuel table</label>
+                <div class="tbl-onfile" id="tbl-ve-onfile"></div>
                 <textarea id="s-axis-table" rows="4" spellcheck="false"
-                  placeholder="Paste your VE table (Copy with Axis). We read the RPM row across the top and the MAP (kPa) values down the side automatically — order and all (VCM low→high, Holley high→low both work). Cell values are ignored."></textarea>
+                  placeholder="Paste the whole table (Copy with Axis) — axes and values are read automatically; VCM low→high and Holley high→low both work."></textarea>
                 <details class="axes-manual" id="axes-manual">
-                  <summary>or enter VE breakpoints manually</summary>
+                  <summary>or enter breakpoints manually (axes only)</summary>
                   <div class="axes-grid">
                     <div class="field"><label>RPM breakpoints <span class="hint">(top row)</span></label>
                       <textarea id="s-axis-rpm" rows="2" spellcheck="false"
@@ -129,12 +132,12 @@
               </div>
 
               <div class="axes-group">
-                <label class="axes-group-label">Spark / timing table
-                  <span class="hint">(only if you tune spark — its own axes)</span></label>
+                <label class="axes-group-label" id="tbl-spark-label">Spark / timing table</label>
+                <div class="tbl-onfile" id="tbl-spark-onfile"></div>
                 <textarea id="s-spark-axis-table" rows="4" spellcheck="false"
-                  placeholder="Paste your spark/timing table (Copy with Axis). Same idea as VE — the spark table usually has different breakpoints, so paste it separately."></textarea>
+                  placeholder="Paste your spark table (Copy with Axis). With the values captured, recommendations turn absolute: current → target, ceiling-capped for your build."></textarea>
                 <details class="axes-manual" id="spark-axes-manual">
-                  <summary>or enter spark breakpoints manually</summary>
+                  <summary>or enter breakpoints manually (axes only)</summary>
                   <div class="axes-grid">
                     <div class="field"><label>RPM breakpoints <span class="hint">(top row)</span></label>
                       <textarea id="s-spark-axis-rpm" rows="2" spellcheck="false"
@@ -146,12 +149,22 @@
                 </details>
                 <div class="axes-status" id="spark-axes-status"></div>
               </div>
+
+              <div class="axes-group" id="f-tbl-maf">
+                <label class="axes-group-label">MAF Airflow vs Frequency</label>
+                <div class="tbl-onfile" id="tbl-maf-onfile"></div>
+                <textarea id="s-maf-table" rows="3" spellcheck="false"
+                  placeholder="Paste the MAF calibration (Copy with Axis) — either shape works: Hz+value pairs per line, or a Hz row over a value row."></textarea>
+                <div class="axes-status" id="maf-axes-status"></div>
+              </div>
             </div>
           </details>
         </div>
-        <div class="field switches">
-          <label class="switch"><input type="checkbox" id="s-spark"> Tune spark (knock-governed)</label>
-          <label class="switch"><input type="checkbox" id="s-power"> Find power (opt-in adds)</label>
+        <div class="field switches wide">
+          <label class="switch"><input type="checkbox" id="s-spark"> Tune spark
+            <span class="hint">(knock-governed — pulls timing where knock shows)</span></label>
+          <label class="switch"><input type="checkbox" id="s-power"> Find power
+            <span class="hint">(allow spark ADDs: careful +1°/pass toward MBT where the data says it's safe)</span></label>
         </div>
         <div class="form-actions wide">
           <button type="button" class="ghost" id="setup-cancel">Cancel</button>

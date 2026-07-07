@@ -588,6 +588,76 @@ def test_custom_spark_axes_are_independent_of_ve_axes():
     assert len(rows) == len(spark_map) and len(rows[0].split("\t")) == len(spark_rpm)
 
 
+def test_parse_ve_table_captures_values():
+    from tuneassist.core import parse_ve_table, clean_tables
+    tbl = ("%\t400\t800\t1200\trpm\n"
+           "20\t50\t55\t60\n40\t52\t57\t62\n60\t54\t59\t64\nkPa")
+    p = parse_ve_table(tbl)
+    assert p["values"] == [[50, 55, 60], [52, 57, 62], [54, 59, 64]]
+    t = clean_tables({"spark": {"table": tbl}})
+    assert t["spark"]["values"][1][2] == 62 and t["spark"]["pasted"]
+    # a ragged row -> axes still usable, values dropped
+    p2 = parse_ve_table("%\t400\t800\t1200\trpm\n20\t50\t55\n40\t52\t57\t62\nkPa")
+    assert p2["values"] is None and p2["rpm"] == [400, 800, 1200]
+
+
+def test_parse_maf_table_both_orientations():
+    from tuneassist.core import parse_maf_table
+    cols = "1500\t4.2\n3000\t9.8\n4500\t18.4\n6000\t30.1\n7500\t44.9"
+    rows = "1500\t3000\t4500\t6000\t7500\n4.2\t9.8\t18.4\t30.1\t44.9"
+    for txt in (cols, rows):
+        m = parse_maf_table(txt)
+        assert m["hz"] == [1500, 3000, 4500, 6000, 7500]
+        assert m["values"][2] == 18.4
+    assert parse_maf_table("7500\t1500\n1\t2") is None   # non-ascending axis
+
+
+def test_spark_table_gives_absolute_targets_and_ceiling_cap():
+    import tempfile
+    import numpy as np, pandas as pd
+    n = 4000
+    rpm = np.clip(3600 + 3400 * np.sin(np.arange(n) / 37), 600, 6800)
+    mapk = np.clip(60 + 46 * np.sin(np.arange(n) / 23), 20, 100)
+    knock = np.where((rpm > 4000) & (mapk > 85), 3.0, 0.0)
+    df = pd.DataFrame({"Time": np.arange(n) * .05, "Engine RPM": rpm,
+                       "Intake Manifold Absolute Pressure": mapk,
+                       "Throttle Position": np.clip(mapk - 15, 0, 95),
+                       "Coolant Temp": np.full(n, 195.0),
+                       "Commanded AFR": np.full(n, 12.8),
+                       "Spark Advance": np.clip(30 - (mapk - 40) * .12, 8, 34),
+                       "Knock Retard": knock,
+                       "Short Term Fuel Trim Bank 1": np.full(n, 4.0),
+                       "Long Term Fuel Trim Bank 1": np.zeros(n)})
+    rpm_bp = [800, 1600, 2400, 3200, 4000, 4800, 5600, 6400]
+    map_bp = [20, 40, 60, 80, 100]
+    tbl = "\t".join(["%"] + [str(r) for r in rpm_bp]) + "\trpm\n"
+    for mp in map_bp:
+        row = [round(34 - mp * 0.10, 1)] * len(rpm_bp)
+        tbl += "\t".join([str(mp)] + [str(v) for v in row]) + "\n"
+    tbl += "kPa"
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "log.csv")
+        df.to_csv(p, index=False)
+        cr = analyze_log(p, _opts(tune_spark=True, find_power=True,
+                                  tables={"spark": {"table": tbl}}), out_dir=None)
+    dd = cr.to_dict()
+    sp = dd["spark"]
+    assert sp["has_table"] and sp["find_power"]
+    pulls = [c for c in sp["cells"] if c["action"] == "PULL"]
+    assert pulls and "current" in pulls[0] and "target" in pulls[0]
+    assert pulls[0]["target"] == round(pulls[0]["current"] + pulls[0]["deg"], 1)
+    # ADDs never push a cell past the ceiling; capped cells are AT_CEILING
+    from tuneassist.profile import spark_bounds
+    hi = spark_bounds(None, 14.7)[1]
+    for c in sp["cells"]:
+        if c["action"] in ("ADD", "AT_CEILING") and "target" in c:
+            assert c["target"] <= hi + 0.05
+    # the absolute TSV is the FULL table (5 MAP rows x 8 RPM cols), never 0-filled
+    rows = dd["tsv"]["spark_abs"].split("\n")
+    assert len(rows) == 5 and all(len(r.split("\t")) == 8 for r in rows)
+    assert not any(v == "0" for r in rows for v in r.split("\t"))
+
+
 def test_no_axes_keeps_default_interval_bins():
     cr = analyze_log(os.path.join(FIX, "ride42.csv"), _opts(), out_dir=None)
     assert cr.ve_axes is None
