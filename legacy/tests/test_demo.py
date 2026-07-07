@@ -1,10 +1,10 @@
 """Tests for the locked-down demo mode (textual serve)."""
 import sys, os, asyncio, tempfile
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from textual.widgets import Input, Button
-from tuneassist.tui import TuneAssistApp, GarageScreen, SetupScreen, AnalyzeScreen
-from tuneassist.demo import _samples_dir
+from legacy.tui import TuneAssistApp, GarageScreen, SetupScreen, AnalyzeScreen
+from legacy.demo import _samples_dir
 
 SAMPLES = _samples_dir()
 

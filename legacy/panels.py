@@ -23,7 +23,7 @@ from rich.text import Text
 from rich.align import Align
 from rich import box
 
-from .stages import STAGES, STAGE_ORDER
+from tuneassist.stages import STAGES, STAGE_ORDER
 
 
 TRIAGE_COLOR = {
@@ -116,7 +116,7 @@ def build_journey_bar(current_stage: str):
 
 
 def build_triage(tr, platform: str, make: str | None = None):
-    from .core import platform_label
+    from tuneassist.core import platform_label
     color = TRIAGE_COLOR.get(tr.state, "white")
     head = Text()
     label = platform_label(platform) + (f" - {make.upper()}" if make else "")

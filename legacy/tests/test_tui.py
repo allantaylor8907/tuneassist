@@ -4,12 +4,12 @@ These drive the app the way a user would and assert the screens compose and the
 analysis renders + persists. Numeric correctness is covered by test_core/test_*;
 here we prove the UI wires to the core."""
 import sys, os, tempfile, asyncio
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from textual.widgets import Button, Input, DataTable, Static
 
-from tuneassist.tui import TuneAssistApp, GarageScreen, AnalyzeScreen, SetupScreen
-from tuneassist.panels import build_report
+from legacy.tui import TuneAssistApp, GarageScreen, AnalyzeScreen, SetupScreen
+from legacy.panels import build_report
 from tuneassist.core import analyze_log, SessionOpts
 from tuneassist.engine_gm import Config
 from tuneassist import garage
@@ -154,7 +154,7 @@ def test_directory_tree_can_reroot_outside_project():
 def test_native_picker_helper_is_callable():
     # don't actually open a dialog; just confirm the helper exists and is safe to
     # reference (it would be invoked in a worker thread at runtime).
-    from tuneassist.tui import _native_pick_file
+    from legacy.tui import _native_pick_file
     assert callable(_native_pick_file)
 
 

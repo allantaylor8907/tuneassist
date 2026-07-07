@@ -4,7 +4,7 @@
     python demo/serve.py            # -> http://localhost:8000
 
 Each browser session gets its own isolated, locked-down app process (file access
-confined to demo/samples). Equivalent to: textual serve "python -m tuneassist.demo"
+confined to demo/samples). Equivalent to: textual serve "python -m legacy.demo"
 """
 import os
 
@@ -14,7 +14,7 @@ from textual_serve.server import Server
 def main():
     host = os.environ.get("HOST", "localhost")
     port = int(os.environ.get("PORT", "8000"))
-    Server("python -m tuneassist.demo", host=host, port=port,
+    Server("python -m legacy.demo", host=host, port=port,
            title="Tune Assist - demo").serve()
 
 

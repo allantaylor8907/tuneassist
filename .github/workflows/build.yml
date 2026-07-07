@@ -1,8 +1,10 @@
 name: build
 
 # Runs tests on every push/PR, and builds single-file binaries for
-# Windows / macOS / Linux. On a version tag (v*) the binaries are attached to a
-# GitHub Release so non-technical users can just download one file and run it.
+# Windows (the primary target -- HP Tuners and Holley EFI only run there) and
+# Linux. On a version tag (v*) the binaries are attached to a GitHub Release so
+# non-technical users can just download one file and run it. (macOS builds were
+# dropped in v0.1.22: the vendor tuning software doesn't run on macOS.)
 
 on:
   push:
@@ -30,22 +32,27 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            binname: tuneassist
-            # OS-specific release asset name -- must stay distinct (no collisions)
-            # and must contain the OS keyword the self-updater matches on
-            # (update.py: 'linux' / 'macos' / 'windows').
-            asset: tuneassist-linux-x64
-            # PyInstaller --add-data uses ';' on Windows, ':' elsewhere
-            datasep: ":"
           - os: windows-latest
             binname: tuneassist.exe
+            # OS-specific release asset name -- must stay distinct (no collisions)
+            # and must contain the OS keyword the self-updater matches on
+            # (update.py: 'linux' / 'windows').
             asset: tuneassist-windows-x64.exe
+            # PyInstaller --add-data uses ';' on Windows, ':' elsewhere
             datasep: ";"
-          - os: macos-latest
+            # The Windows desktop experience: a real app icon, a branded splash
+            # while the onefile bundle extracts, and hide-console at the
+            # BOOTLOADER (no black console flash on double-click; a terminal
+            # launch still gets full CLI output).
+            extraargs: >-
+              --icon packaging/icon.ico
+              --splash packaging/splash.png
+              --hide-console hide-early
+          - os: ubuntu-latest
             binname: tuneassist
-            asset: tuneassist-macos-arm64
+            asset: tuneassist-linux-x64
             datasep: ":"
+            extraargs: ""
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -54,7 +61,7 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[build]"
       - name: Build single-file binary
-        run: pyinstaller --onefile --name tuneassist --noconfirm --paths . --collect-all textual --add-data "tuneassist/gui/static${{ matrix.datasep }}tuneassist/gui/static" packaging/entry.py
+        run: pyinstaller --onefile --name tuneassist --noconfirm --paths . ${{ matrix.extraargs }} --add-data "tuneassist/gui/static${{ matrix.datasep }}tuneassist/gui/static" packaging/entry.py
       - name: Smoke-test the binary (headless JSON)
         shell: bash
         run: ./dist/${{ matrix.binname }} tests/fixtures/ride42.csv --json > out.json && python -c "import json;d=json.load(open('out.json'));assert d['stage']=='TUNE_VE_SD',d['stage'];print('binary OK')"

@@ -1,5 +1,4 @@
 pandas>=2.0
 numpy>=1.24
-rich>=13.0        # interactive/guided terminal UI (wizard, heatmaps, panels)
-textual>=0.80     # the full Textual TUI (tui.py)
-matplotlib>=3.7   # optional, for image heatmaps
+# matplotlib>=3.7   # optional, for image heatmaps
+# (textual/rich were retired with the terminal UI -- see legacy/README.md)

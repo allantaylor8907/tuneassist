@@ -10,11 +10,11 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "tuneassist" }]
+# Lean by design: the engine is pandas/numpy; the GUI is stdlib + a browser.
+# (textual/rich left with the retired TUI -- see legacy/README.md.)
 dependencies = [
     "pandas>=2.0",
     "numpy>=1.24",
-    "rich>=13.0",
-    "textual>=0.80",
 ]
 
 [project.optional-dependencies]
@@ -22,14 +22,10 @@ dependencies = [
 build = ["pyinstaller>=6.0"]
 # Image heatmaps (optional).
 plot = ["matplotlib>=3.7"]
-# Host the Textual demo in a browser (zero-install try-it link).
-serve = ["textual-serve>=1.0"]
 
 [project.scripts]
-# `pipx install .` / `uv tool install .` exposes these commands.
+# `pipx install .` / `uv tool install .` exposes this command.
 tuneassist = "tuneassist.cli:main"
-tuneassist-tui = "tuneassist.tui:run_tui"
-tuneassist-demo = "tuneassist.demo:run_demo"
 
 [tool.setuptools]
 packages = ["tuneassist", "tuneassist.gui"]
