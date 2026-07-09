@@ -609,7 +609,12 @@ document.addEventListener("drop", async e => {
     return;
   }
   if (!S.current) S.current = { name: null, ephemeral: true, stoich: 14.7, airflow_mode: "ve_sd" };
+  analyzeUpload(f);
+});
+
+async function analyzeUpload(f) {
   enterAnalyze();
+  S.reanalyze = () => analyzeUpload(f);        // so the report can re-run this log
   busy(true);
   try {
     const r = await fetch(BASE + "api/analyze-upload", {
@@ -622,11 +627,12 @@ document.addEventListener("drop", async e => {
     showReport(d);
   } catch (err) { toast("Analysis failed: " + err.message, "err"); }
   busy(false);
-});
+}
 
 async function runAnalyze() {
   const path = $("#path-input").value.trim();
   if (!path) { toast("Pick or paste a log CSV first."); return; }
+  S.reanalyze = () => runAnalyze();            // path-input still holds the log
   busy(true);
   try {
     const body = analyzeOpts(); body.path = path;
@@ -634,6 +640,15 @@ async function runAnalyze() {
     showReport(d);
   } catch (err) { toast("Analysis failed: " + err.message, "err"); }
   busy(false);
+}
+
+/* "Add power" is a DISPLAY toggle over always-computed adds: instant, no
+   re-analysis. Remembers it as this car's default (persists on the next analyze
+   of a saved vehicle via find_power). */
+function setShowAdds(on) {
+  S.showAdds = on;
+  if (S.current) S.current.find_power = on;
+  if (S.report) showReport(S.report, true);      // re-render from the same payload
 }
 function busy(on) {
   $("#dropzone").classList.toggle("busy", on);
@@ -658,8 +673,11 @@ function renderJourney(stageKey, journey) {
 const SEV = { critical: ["crit", "CRITICAL"], warning: ["warn", "WARNING"],
               opportunity: ["opp", "OPPORTUNITY"], info: ["info", "INFO"] };
 
-function showReport(d) {
+function showReport(d, rerender) {
   S.report = d;
+  // "Add power" is a display filter over always-computed adds. Seed it from the
+  // car's default (spark.find_power) on a fresh report; keep it on re-renders.
+  if (!rerender) S.showAdds = !!(d.spark && d.spark.find_power);
   if (d.journey) { S.presets._journey = d.journey; d.journey.forEach((s, i) => S.presets._stageIndex[s.key] = i); }
   renderJourney(d.stage, d.journey);
   const rep = $("#report");
@@ -668,7 +686,7 @@ function showReport(d) {
                 + buildFindings(d) + buildChartShells(d);
   wireReport(d);
   renderCharts();
-  rep.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (!rerender) rep.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function buildStaleTables(d) {
@@ -767,22 +785,32 @@ function buildChartShells(d) {
   }
   if (d.spark && d.spark.can_run && d.spark.cells && d.spark.cells.length) {
     const sp = d.spark;
+    const showAdds = !!S.showAdds;
+    const isAdd = c => c.action === "ADD" || c.action === "AT_CEILING";
+    const isPull = c => c.action && c.action !== "OK" && !isAdd(c);
+    const addCount = sp.cells.filter(isAdd).length;
+    const pullCount = sp.cells.filter(isPull).length;
+    const hasWork = pullCount > 0 || (showAdds && addCount > 0);
     const axN = d.spark_axes ? `${d.spark_axes.rpm.length}×${d.spark_axes.map.length}` : null;
-    const hasWork = sp.cells.some(c => c.action && c.action !== "OK");
     const sub = sp.has_table
-      ? `absolute: current → target, matched to your spark table (${axN}) — ADDs capped at your build's ceiling`
+      ? `absolute: current → target, matched to your spark table (${axN})`
       : axN ? `degrees to add (+) / pull (−) — matched to your spark table (${axN})`
             : `degrees to add (+) / pull (−) per RPM × MAP cell`;
     const tableNotes = (sp.table_findings || []).map(t =>
       `<p class="sub spark-tablenote">⚠ ${esc(t)}</p>`).join("");
+    // "Add power" is a display toggle over always-computed adds -- flipping it is
+    // instant (no re-analysis), the default is pulls-only (the safe view).
+    const addToggle = `<label class="spark-fp" title="Reveal the knock-safe timing ADDs toward MBT (off = knock-driven pulls only, the safe default)">
+        <input type="checkbox" id="spark-add"${showAdds ? " checked" : ""}> Add power${
+          addCount ? ` <span class="spark-fp-n">${addCount}</span>` : ""}</label>`;
     if (!hasWork) {
-      // nothing to change: say it in words instead of a grid of zeros
-      const powerHint = sp.find_power
-        ? "Find power is on, but no cells had the load + clean AFR/IAT needed to suggest an add — get more time at WOT."
-        : "Want to hunt for MBT? Turn on <strong>Find power</strong> in this car's setup (Edit) and it will suggest careful +1° adds where the data says it's safe.";
+      const powerHint = addCount
+        ? `<strong>${addCount} cell${addCount > 1 ? "s" : ""}</strong> look safe for a little more timing toward MBT — flip <strong>Add power</strong> to see them.`
+        : "No cells had the load + clean AFR/IAT needed to suggest an add — get some wide-open-throttle pulls into the log to hunt for power.";
       html += `
     <div class="chart-card expert-only">
-      <div class="ch-head"><h3>Spark / timing</h3><span class="ch-sub">${sub}</span></div>
+      <div class="ch-head"><h3>Spark / timing</h3><span class="ch-sub">${sub}</span>
+        <div class="ch-actions">${addToggle}</div></div>
       <div class="spark-clean">
         <span class="spark-clean-ico">✓</span>
         <div><strong>No knock anywhere in this log — timing is holding at its current advance.</strong>
@@ -792,13 +820,15 @@ function buildChartShells(d) {
       ${sp.advisory ? `<p class="sub spark-advisory">${esc(sp.advisory)}</p>` : ""}
     </div>`;
     } else {
+      const copyLabel = showAdds ? "Copy changes (Add)"
+                                 : (pullCount ? "Copy pulls (Add)" : "Copy changes (Add)");
       html += `
     <div class="chart-card expert-only">
       <div class="ch-head">
         <h3>Spark / timing change</h3><span class="ch-sub">${sub}</span>
-        <div class="ch-actions">
+        <div class="ch-actions">${addToggle}
           ${d.tsv && d.tsv.spark_abs ? `<button id="copy-spark-abs" class="primary">Copy new spark table</button>` : ""}
-          ${d.tsv && d.tsv.spark ? `<button id="copy-spark-tsv">Copy changes (Add)</button>` : ""}
+          ${d.tsv && d.tsv.spark ? `<button id="copy-spark-tsv">${copyLabel}</button>` : ""}
         </div>
       </div>
       <div id="spark-heatmap" class="chart-box"></div>
@@ -806,10 +836,10 @@ function buildChartShells(d) {
       ${sp.advisory ? `<p class="sub spark-advisory">${esc(sp.advisory)}</p>` : ""}
       <details class="why expander"><summary>What am I looking at?</summary>
         <div class="why-body">Knock-governed timing moves per cell. <strong>Red = pull timing</strong>
-        (the engine knocked there — the pull includes a safety margin); <strong>green = room to add</strong>
-        (only with "Find power" on, and ${sp.has_table ? "capped at the advisory ceiling for your build"
-        : "never more than +1° per pass"}). A cell tagged LEAN or HOT means fix fueling or charge
-        temp <em>before</em> touching timing.
+        (the engine knocked there — the pull includes a safety margin). <strong>Add power</strong> reveals
+        <strong>green = room to add</strong> toward MBT (${sp.has_table ? "capped at the advisory ceiling for your build"
+        : "never more than +1° per pass"}); it's off by default because pulling is always the safe move.
+        A cell tagged LEAN or HOT means fix fueling or charge temp <em>before</em> touching timing.
         ${sp.has_table
           ? "<strong>Copy new spark table</strong> gives your complete table with the changes applied — paste it over the whole table (plain paste). Cells the log didn't cover keep your original values."
           : "Paste the changes into your spark table with Paste Special → <strong>Add</strong> (degrees, not a percentage)."}</div>
@@ -881,12 +911,14 @@ function wireReport(d) {
   if (cm) cm.onclick = () => copyText(d.tsv.maf,
     "Copied the MAF row. Paste into the MAF calibration (Multiply by Percentage) — not the VE table.");
   const cs = $("#copy-spark-tsv");
-  if (cs) cs.onclick = () => copyText(d.tsv.spark, d.spark_axes
+  if (cs) cs.onclick = () => copyText(S.showAdds ? d.tsv.spark_power : d.tsv.spark, d.spark_axes
     ? "Copied — laid out to match your spark table. In VCM Editor: click the top-left cell → Paste Special → Add (degrees)."
-    : "Copied the spark grid. Paste into your spark table with Paste Special → Add (these are degrees, not %).");
+    : "Copied the spark changes. Paste into your spark table with Paste Special → Add (degrees, not %).");
   const ca = $("#copy-spark-abs");
-  if (ca) ca.onclick = () => copyText(d.tsv.spark_abs,
+  if (ca) ca.onclick = () => copyText(S.showAdds ? d.tsv.spark_abs_power : d.tsv.spark_abs,
     "Copied your COMPLETE new spark table. Select the whole table (top-left cell) and plain-paste (Ctrl+V) — cells the log didn't cover keep your original values.");
+  const fp = $("#spark-add");
+  if (fp) fp.onchange = e => setShowAdds(e.target.checked);
   const te = $("#to-expert");
   if (te) te.onclick = () => setSkill("expert");
   const cr = $("#cov-ref-btn");
@@ -980,7 +1012,10 @@ function veHeatmap(el, d) {
 
 function sparkHeatmap(el, d) {
   const C = chartColors();
-  const cells = d.spark.cells;
+  // hide power ADDs unless "Add power" is on -- render them as no-change cells
+  const isAdd = a => a === "ADD" || a === "AT_CEILING";
+  const cells = S.showAdds ? d.spark.cells
+    : d.spark.cells.map(c => isAdd(c.action) ? { ...c, deg: 0, action: "OK" } : c);
   const rpmL = axisSort([...new Set(cells.map(c => c.rpm))]);
   const mapL = axisSort([...new Set(cells.map(c => c.map))]);
   const data = cells.map(c => [mapL.indexOf(c.map), rpmL.indexOf(c.rpm), c.deg,

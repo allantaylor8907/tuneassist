@@ -52,11 +52,14 @@ def test_spark_flags_hot_iat():
     assert (r.action.stack().dropna() == "HOT").any()
 
 
-def test_find_power_adds_only_when_safe():
-    off = analyze_spark(_wot_log(knock_at_high_load=0.0), Config(), find_power=False)
+def test_power_adds_computed_in_safe_wot_cells():
+    # ADDs are always computed now (the GUI reveals them on demand); find_power is
+    # just the default-reveal preference, carried through on the result.
+    r = analyze_spark(_wot_log(knock_at_high_load=0.0), Config(), find_power=False)
+    assert (r.action.stack().dropna() == "ADD").any()
+    assert r.find_power is False
     on = analyze_spark(_wot_log(knock_at_high_load=0.0), Config(), find_power=True)
-    assert not (off.action.stack().dropna() == "ADD").any()
-    assert (on.action.stack().dropna() == "ADD").any()
+    assert on.find_power is True
 
 
 def test_maf_correction_builds_frequency_table():

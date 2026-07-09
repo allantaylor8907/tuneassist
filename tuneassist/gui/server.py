@@ -313,6 +313,9 @@ def make_handler(state: GuiState, token: str):
                     rec["history"] = hist[-20:]
                     rec["stage"] = cr.stage
                     rec["updated"] = datetime.datetime.now().isoformat(timespec="seconds")
+                    # find-power is a genuine per-car preference the report card
+                    # can now toggle -- persist the value this analysis ran with.
+                    rec["find_power"] = bool(opts.find_power)
                     # staleness: count analyses since the tables were last pasted.
                     # >=2 means the user has analyzed (and likely edited the tune)
                     # since the paste -- the GUI prompts a re-paste.

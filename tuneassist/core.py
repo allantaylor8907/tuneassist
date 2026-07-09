@@ -1092,22 +1092,33 @@ def maf_tsv(cr) -> str | None:
     return series_tsv(maf[0] if maf else None, "percent")
 
 
-def spark_tsv(cr) -> str | None:
+def _is_add(action) -> bool:
+    return str(action) in ("ADD", "AT_CEILING")
+
+
+def spark_tsv(cr, adds: bool = False) -> str | None:
     """The spark change grid (degrees to add/pull) as TSV -- paste with Add.
-    With custom spark axes, transpose to the spark table's layout (RPM cols x
-    MAP rows) like the VE grid."""
+    Power ADDs are ALWAYS computed; `adds=False` (the safe default) zeroes them so
+    a paste only pulls timing where knock showed. With custom spark axes, transpose
+    to the spark table's layout (RPM cols x MAP rows) like the VE grid."""
     sp = getattr(cr, "spark", None)
     grid = getattr(sp, "change", None) if sp else None
-    if grid is not None and getattr(cr, "spark_axes", None) and not getattr(grid, "empty", True):
+    if grid is None:
+        return None
+    grid = grid.copy()
+    if not adds and getattr(sp, "action", None) is not None:
+        grid = grid.mask(sp.action.map(_is_add).fillna(False), 0.0)
+    if getattr(cr, "spark_axes", None) and not getattr(grid, "empty", True):
         grid = grid.T
     return grid_tsv(grid, "raw")
 
 
-def spark_abs_tsv(cr) -> str | None:
+def spark_abs_tsv(cr, adds: bool = False) -> str | None:
     """The COMPLETE new spark table -- the user's own values with the targets
     applied -- in the table's layout (MAP rows x RPM cols). Paste it over the
     whole table as a plain paste (NOT Paste Special/Add). Cells the log didn't
-    cover keep the ORIGINAL value, never 0, so a full-table paste is safe."""
+    cover keep the ORIGINAL value, never 0. `adds=False` also keeps the original
+    on power-ADD cells, so the safe default only applies knock pulls."""
     sp = getattr(cr, "spark", None)
     t = (getattr(cr, "tables", None) or {}).get("spark")
     if sp is None or not getattr(sp, "can_run", False) or sp.target is None \
@@ -1120,9 +1131,10 @@ def spark_abs_tsv(cr) -> str | None:
         for ri, rp in enumerate(rpm_user):
             v = float(vals[mi][ri])
             try:
-                tv = sp.target.loc[rp, mp]      # relabeled to user-order breakpoints
-                if tv == tv:                    # not NaN
-                    v = float(tv)
+                if adds or not _is_add(sp.action.loc[rp, mp]):
+                    tv = sp.target.loc[rp, mp]  # relabeled to user-order breakpoints
+                    if tv == tv:                # not NaN
+                        v = float(tv)
             except (KeyError, TypeError):
                 pass
             row.append(_tsv_num(v))
@@ -1263,10 +1275,17 @@ def result_to_dict(cr: CoreResult) -> dict:
     if cr.channel_coverage:
         d["channel_coverage"] = cr.channel_coverage
     tsv = {}
-    for name, fn in (("correction", correction_tsv), ("maf", maf_tsv),
-                     ("spark", spark_tsv), ("spark_abs", spark_abs_tsv)):
+    builders = [("correction", lambda: correction_tsv(cr)),
+                ("maf", lambda: maf_tsv(cr)),
+                # spark: pulls-only (safe default) + a *_power variant with the
+                # ADDs applied; the GUI picks by the "Add power" toggle.
+                ("spark", lambda: spark_tsv(cr, adds=False)),
+                ("spark_power", lambda: spark_tsv(cr, adds=True)),
+                ("spark_abs", lambda: spark_abs_tsv(cr, adds=False)),
+                ("spark_abs_power", lambda: spark_abs_tsv(cr, adds=True))]
+    for name, fn in builders:
         try:
-            v = fn(cr)
+            v = fn()
         except Exception:                  # pragma: no cover - defensive
             v = None
         if v:
