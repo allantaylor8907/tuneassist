@@ -309,6 +309,8 @@ details.why .why-body { color: var(--text-2); font-size: 13.5px; background: var
 .spark-fp input { accent-color: var(--accent); cursor: pointer; margin: 0; }
 .spark-fp:has(input:checked) { border-color: var(--accent); color: var(--accent);
   background: var(--accent-soft); }
+.spark-fp-n { background: var(--opp); color: #fff; font-size: 10.5px; font-weight: 700;
+  border-radius: 999px; padding: 0 6px; line-height: 16px; }
 #ve-heatmap, #spark-heatmap { height: 380px; }
 #maf-chart { height: 200px; }
 #timeline-chart { height: 340px; }

@@ -201,7 +201,10 @@ def analyze_spark(df: pd.DataFrame, cfg, find_power: bool = False,
                     action.loc[r, c] = "HOT"       # cool the charge / IAT comp
                 else:
                     action.loc[r, c] = "PULL"
-            elif find_power and map_mid >= cfg.wot_map_min and not hot and not lean:
+            elif map_mid >= cfg.wot_map_min and not hot and not lean:
+                # Power ADDs are ALWAYS computed (the GUI decides whether to show
+                # them; `find_power` is just the default reveal). Safe region only:
+                # power load, no knock, AFR/IAT ok.
                 add = min(cfg.spark_add_step, cfg.spark_add_max)
                 if cur is not None and ceiling is not None:
                     room = ceiling - cur
@@ -220,17 +223,16 @@ def analyze_spark(df: pd.DataFrame, cfg, find_power: bool = False,
             if target is not None and cur is not None and not pd.isna(change.loc[r, c]):
                 target.loc[r, c] = round(cur + float(change.loc[r, c]), 1)
 
+    add_cells = int((action.stack().astype(str).isin(["ADD", "AT_CEILING"])).sum()) \
+        if action is not None else 0
     if knock_cells:
         notes.append(f"{knock_cells} cell(s) showed knock retard -- pulls include a "
                      f"+{cfg.knock_pull_margin:g} safety margin beyond the observed retard.")
-    if find_power:
-        notes.append(f"'Find power' on: suggesting tiny +{cfg.spark_add_step:g} adds only "
-                     "in the power region where IAT and AFR are safe. Add, re-log, repeat; "
-                     f"back off {cfg.spark_back_off:g} once torque flattens or knock shows.")
-    else:
-        notes.append("'Find power' is OFF, so only knock-driven PULLS are shown. Turn it on "
-                     "in the car's setup to get conservative +1 deg ADD suggestions where "
-                     "the data says it's safe.")
+    if add_cells:
+        notes.append(f"{add_cells} power cell(s) look safe for a small +{cfg.spark_add_step:g} deg "
+                     "add (power load, no knock, AFR/IAT ok). Add, re-log, repeat; back off "
+                     f"{cfg.spark_back_off:g} once torque flattens or knock shows. (Adds are hidden "
+                     "until you flip 'Add power' -- pulling timing is always the safe default.)")
     if lookup and ceiling is not None:
         notes.append(f"Your spark table is loaded: recommendations are absolute (current -> "
                      f"target), and ADDs stop at the ~{ceiling:g} deg advisory ceiling for "

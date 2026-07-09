@@ -57,8 +57,12 @@ tunable state.
   Tested (synthetic crank logs).
 - `holley.py` — Holley CSV ingest + Learn/CL-comp-based correction.
 - `spark.py` — knock-governed timing analysis (DESIGN §10). Refuses without a knock
-  channel; PULLs on knock (+margin), cautious opt-in ADDs for power (`find_power`);
-  flags LEAN/HOT root causes. **Table-aware** when the user pastes their spark
+  channel; PULLs on knock (+margin), flags LEAN/HOT root causes. Power ADDs
+  toward MBT (safe WOT region) are ALWAYS computed now; `find_power` is only
+  the DEFAULT reveal -- the GUI's "Add power" toggle shows/hides them client-
+  side (default hidden, pulling is the safe view). `to_dict` emits pulls-only
+  `tsv.spark`/`spark_abs` plus `*_power` variants with the adds applied; the
+  toggle picks. Persisted per car via find_power on the next analyze. **Table-aware** when the user pastes their spark
   table WITH values (`SessionOpts.tables["spark"]`): recommendations turn absolute
   (current -> target per cell), ADDs cap at `profile.spark_bounds()`'s ceiling
   (AT_CEILING action), `scan_spark_table` sanity-checks the table itself (WOT

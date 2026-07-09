@@ -658,6 +658,41 @@ def test_spark_table_gives_absolute_targets_and_ceiling_cap():
     assert not any(v == "0" for r in rows for v in r.split("\t"))
 
 
+def test_spark_adds_always_computed_pulls_only_by_default():
+    # adds are computed regardless of find_power; the default TSVs are pulls-only,
+    # the *_power TSVs include the adds.
+    import tempfile
+    import numpy as np, pandas as pd
+    n = 4000
+    rpm = np.clip(3600 + 3400 * np.sin(np.arange(n) / 37), 600, 6800)
+    mapk = np.clip(60 + 46 * np.sin(np.arange(n) / 23), 20, 100)
+    knock = np.where((rpm > 4200) & (mapk > 90), 3.0, 0.0)   # a little knock way up top
+    df = pd.DataFrame({"Time": np.arange(n) * .05, "Engine RPM": rpm,
+                       "Intake Manifold Absolute Pressure": mapk,
+                       "Throttle Position": np.clip(mapk - 15, 0, 95),
+                       "Coolant Temp": np.full(n, 195.0),
+                       "Commanded AFR": np.full(n, 12.8),
+                       "Spark Advance": np.clip(24 - (mapk - 40) * .05, 8, 28),
+                       "Knock Retard": knock,
+                       "Short Term Fuel Trim Bank 1": np.full(n, 4.0),
+                       "Long Term Fuel Trim Bank 1": np.zeros(n)})
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "log.csv")
+        df.to_csv(p, index=False)
+        # find_power OFF -> adds STILL present in cells, but pulls-only TSV
+        cr = analyze_log(p, _opts(tune_spark=True, find_power=False), out_dir=None)
+    dd = cr.to_dict()
+    sp = dd["spark"]
+    assert sp["find_power"] is False
+    adds = [c for c in sp["cells"] if c["action"] in ("ADD", "AT_CEILING")]
+    assert adds, "adds should be computed even with find_power off"
+    # the pulls-only delta zeroes the add cells; the *_power one keeps them
+    def n_nonzero(tsv):
+        return sum(1 for r in tsv.split("\n") for v in r.split("\t") if v not in ("0", "-0"))
+    assert dd["tsv"]["spark_power"]
+    assert n_nonzero(dd["tsv"]["spark_power"]) > n_nonzero(dd["tsv"]["spark"])
+
+
 def test_no_axes_keeps_default_interval_bins():
     cr = analyze_log(os.path.join(FIX, "ride42.csv"), _opts(), out_dir=None)
     assert cr.ve_axes is None
