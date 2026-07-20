@@ -583,11 +583,15 @@ function enterAnalyze() {
     <span class="chip">stoich ${esc(v.stoich || 14.7)}</span>
     <span class="chip">${esc(v.airflow_mode || "ve_sd")}</span>`;
   renderJourney(v.stage || "");
+  // prefill the "what's it doing?" box with the car's last complaint
+  const ci = $("#complaint-input");
+  if (ci && !ci.value.trim()) ci.value = v.complaint || "";
 }
 
 function analyzeOpts() {
   const v = S.current || {};
   return {
+    complaint: ($("#complaint-input") && $("#complaint-input").value.trim()) || null,
     vehicle: v.ephemeral ? null : v.name,
     platform: v.platform || null,
     make: v.make || null, architecture: v.architecture || null,
@@ -709,8 +713,8 @@ function showReport(d, rerender) {
   renderJourney(d.stage, d.journey);
   const rep = $("#report");
   rep.classList.remove("hidden");
-  rep.innerHTML = buildVerdict(d) + buildStaleTables(d) + buildCoverage(d)
-                + buildFindings(d) + buildChartShells(d);
+  rep.innerHTML = buildVerdict(d) + buildComplaint(d) + buildStaleTables(d)
+                + buildCoverage(d) + buildFindings(d) + buildChartShells(d);
   wireReport(d);
   renderCharts();
   if (!rerender) rep.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -763,15 +767,38 @@ function buildVerdict(d) {
   </div>`;
 }
 
+function buildComplaint(d) {
+  const c = d.complaint;
+  if (!c) return "";
+  const chips = (c.matched || []).map(m =>
+    `<span class="chip accent">${esc(m.label)}</span>`).join(" ");
+  const heard = c.matched && c.matched.length
+    ? `<div class="cmpl-heard">Heard you: ${chips}${
+        (c.related_ids || []).length
+          ? ` — <strong>${c.related_ids.length} finding${c.related_ids.length > 1 ? "s" : ""} below speak${c.related_ids.length > 1 ? "" : "s"} to it</strong> (pinned first, tagged ⤷ your complaint).`
+          : " — but nothing in this log's findings matches it directly. The coverage notes below may explain why."}</div>`
+    : `<div class="cmpl-heard">Couldn't match that to a known symptom — analysis ran normally.
+       Try words like "rough idle", "bogs when I floor it", "pings under load", "smells rich".</div>`;
+  const gaps = (c.gaps || []).map(g =>
+    `<div class="cmpl-gap">⚠ ${esc(g)}</div>`).join("");
+  return `<div class="card cmpl-card">
+    <div class="cmpl-quote">“${esc(truncate(c.text, 220))}”</div>
+    ${heard}${gaps}
+  </div>`;
+}
+
 function buildFindings(d) {
   const fs = d.findings || [];
   if (!fs.length) return "";
+  const rel = new Set(((d.complaint || {}).related_ids) || []);
   const cards = fs.map((f, i) => {
     const [cls, label] = SEV[f.severity] || SEV.info;
-    const open = (f.severity === "critical" || f.severity === "warning" || i === 0) ? "open" : "";
+    const open = (f.severity === "critical" || f.severity === "warning" || i === 0
+                  || rel.has(f.id)) ? "open" : "";
+    const tag = rel.has(f.id) ? `<span class="badge cmpl">⤷ your complaint</span>` : "";
     return `
     <details class="finding ${cls}" ${open}>
-      <summary><span class="badge ${cls}">${label}</span> ${esc(f.title)}
+      <summary><span class="badge ${cls}">${label}</span> ${tag} ${esc(f.title)}
         <span class="f-detail">${esc(truncate(f.detail, 90))}</span></summary>
       <div class="f-body">
         <div class="fb-block"><div class="fb-k">What I see</div><div>${esc(f.detail)}</div></div>
