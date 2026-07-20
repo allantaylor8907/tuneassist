@@ -200,6 +200,23 @@ def test_tables_round_trip_history_and_staleness():
             httpd.shutdown()
 
 
+def test_complaint_round_trip_and_prefill():
+    with tempfile.TemporaryDirectory() as d:
+        httpd, url, state = start_server(os.path.join(d, "g.json"))
+        try:
+            get, post = _client(url)
+            post("api/garage/upsert", {"name": "cc", "platform": "gm", "stoich": 14.7})
+            r = post("api/analyze", {"path": RIDE, "vehicle": "cc", "stoich": 14.7,
+                                     "complaint": "idles rough and hunts"})
+            c = r["complaint"]
+            assert any(m["id"] == "rough_idle" for m in c["matched"])
+            # the car remembers the last complaint (GUI prefills the box)
+            v = post("api/garage/upsert", {"name": "cc", "platform": "gm", "stoich": 14.7})
+            assert v["vehicle"]["complaint"] == "idles rough and hunts"
+        finally:
+            httpd.shutdown()
+
+
 def test_compare_endpoint():
     with tempfile.TemporaryDirectory() as d:
         httpd, url, state = start_server(os.path.join(d, "g.json"))

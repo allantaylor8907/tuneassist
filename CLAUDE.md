@@ -82,6 +82,20 @@ tunable state.
   vs logged idle target, idle AFR, IAC-closed, idle-timing swing). Detectors
   degrade if channels absent; findings ranked critical→info and shown as a
   readable "What I see / Likely / Do this" panel. ASCII-safe. Tested.
+- `symptoms.py` — **offline "what's it doing?" complaint matcher** (no network,
+  no model, by explicit user requirement -- maybe a tiny bundled local model
+  someday, never an API). A curated symptom taxonomy (rough idle, bog, knock,
+  rich/lean, hard start, surge, misfire, boost, cold running...) with synonym
+  regexes: `match(text)` recognizes the complaint, `region_coverage(df,col,cfg)`
+  checks which log regions (idle/wot/cruise/crank/boost/warmup) have samples,
+  `relate`/`reorder` pin the findings that speak to the complaint FIRST and emit
+  honest coverage gaps ("you said it stumbles at WOT but this log never gets
+  above 60 kPa -- capture a pull"). A prior over diagnostics, never a source:
+  it cannot invent findings. `SessionOpts.complaint` -> `to_dict()['complaint']`
+  = {text, matched, related_ids, gaps}; CLI `--complaint`; the GUI's analyze view
+  has the box (Win+H dictation works for free), the report shows a "Heard you"
+  card + tags matched findings, and the car remembers the last complaint
+  (record['complaint'], persisted on analyze, prefills the box). Tested.
 - `tables.py` — maps a recommended change → the **exact vendor table** to edit
   (GM HP Tuners table names + Holley table names). `core._name_tables` appends
   these to findings; `_primary_change_finding` names the lead table inline.

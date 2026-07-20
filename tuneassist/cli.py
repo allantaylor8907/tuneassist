@@ -141,6 +141,9 @@ def main(argv=None):
     p.add_argument("--airflow", choices=["ve_sd", "maf", "no_maf"], default="ve_sd",
                    help="airflow strategy for --json runs (default ve_sd)")
     p.add_argument("--spark", action="store_true", help="include spark analysis in --json")
+    p.add_argument("--complaint", default=None, metavar="TEXT",
+                   help='free-text "what\'s it doing?" -- pins related findings and '
+                        "flags when the log doesn't cover the described symptom")
     p.add_argument("--check-update", action="store_true",
                    help="check GitHub for a newer release and exit")
     p.add_argument("--update", action="store_true",
@@ -198,7 +201,8 @@ def main(argv=None):
         from .core import SessionOpts, analyze_log
         from .engine_gm import Config
         plat = None if args.platform == "auto" else args.platform
-        opts = SessionOpts(cfg=Config(), airflow_mode=args.airflow, tune_spark=args.spark)
+        opts = SessionOpts(cfg=Config(), airflow_mode=args.airflow, tune_spark=args.spark,
+                           complaint=args.complaint)
         cr = analyze_log(args.log, opts, platform=plat, out_dir=None)
         print(json.dumps(cr.to_dict(), indent=2))
         return
