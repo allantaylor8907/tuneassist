@@ -79,6 +79,7 @@ def _opts_from_payload(p: dict) -> tuple[str | None, core.SessionOpts]:
         ve_axes=core.clean_ve_axes(p.get("ve_axes")),
         spark_axes=core.clean_ve_axes(p.get("spark_axes")),
         tables=core.clean_tables(p.get("tables")),
+        complaint=(str(p.get("complaint") or "").strip() or None),
     )
     preset = p.get("engine_preset")
     mods = list(p.get("mods", []) or [])
@@ -146,6 +147,7 @@ def _vehicle_record(state: GuiState, name: str) -> dict | None:
             "airflow_mode": rec.get("airflow_mode", "ve_sd"),
             "tune_spark": rec.get("tune_spark", False),
             "find_power": rec.get("find_power", False),
+            "complaint": rec.get("complaint"),
             "profile": rec.get("profile"), "cam": rec.get("cam"),
             "cam_tier": rec.get("cam_tier"),
             # the custom table axes MUST round-trip to the frontend, or the saved
@@ -340,6 +342,9 @@ def make_handler(state: GuiState, token: str):
                     # find-power is a genuine per-car preference the report card
                     # can now toggle -- persist the value this analysis ran with.
                     rec["find_power"] = bool(opts.find_power)
+                    # remember the last complaint so the box prefills next time
+                    if opts.complaint:
+                        rec["complaint"] = opts.complaint
                     # staleness: count analyses since the tables were last pasted.
                     # >=2 means the user has analyzed (and likely edited the tune)
                     # since the paste -- the GUI prompts a re-paste.
@@ -405,6 +410,7 @@ def make_handler(state: GuiState, token: str):
                 if old:
                     rec["history"] = old.get("history", [])
                     rec["stage"] = old.get("stage")
+                    rec["complaint"] = old.get("complaint")   # last "what's it doing?"
                     # Tune-table versioning: keep old tables when none were
                     # (re)pasted; when a table's VALUES changed, archive the
                     # prior version (capped) and reset the staleness counter.

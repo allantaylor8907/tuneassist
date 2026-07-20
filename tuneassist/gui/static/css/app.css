@@ -284,6 +284,7 @@ details.why .why-body { color: var(--text-2); font-size: 13.5px; background: var
 .badge.warn { background: var(--warn-bg); color: var(--warn); }
 .badge.opp  { background: var(--opp-bg);  color: var(--opp); }
 .badge.info { background: var(--info-bg); color: var(--info); }
+.badge.cmpl { background: var(--accent-soft); color: var(--accent); }
 
 /* findings */
 .findings { display: flex; flex-direction: column; gap: 10px; }
@@ -376,6 +377,21 @@ body[data-skill="expert"] .beginner-only { display: none; }
   font: inherit; font-size: 13px; }
 .linklike:hover { filter: none; text-decoration: underline; }
 .dz-foot { margin-top: 14px; }
+/* "what's it doing?" complaint box + report card */
+.dz-complaint { margin-top: 16px; max-width: 640px; margin-left: auto; margin-right: auto;
+  text-align: left; }
+.dz-complaint label { display: block; font-weight: 570; font-size: 13px; margin-bottom: 6px; }
+.dz-complaint kbd { font: 11px var(--mono); background: var(--bg-3); border: 1px solid var(--line-2);
+  border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; }
+.dz-complaint textarea { width: 100%; font: 13.5px/1.5 var(--font); color: var(--text);
+  background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--radius-sm);
+  padding: 8px 10px; resize: vertical; }
+.cmpl-card { margin-top: 16px; border-left: 3px solid var(--accent); }
+.cmpl-quote { font-style: italic; color: var(--text-2); margin-bottom: 10px; }
+.cmpl-heard { font-size: 13.5px; }
+.cmpl-heard .chip { margin: 0 2px; }
+.cmpl-gap { margin-top: 10px; font-size: 13.5px; color: var(--warn);
+  background: var(--warn-bg); border-radius: var(--radius-sm); padding: 8px 12px; }
 
 /* ============ channels-to-log modal ============ */
 .modal-wrap { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center;
