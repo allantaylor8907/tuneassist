@@ -189,6 +189,13 @@ def test_tables_round_trip_history_and_staleness():
             assert v3["vehicle"]["table_history_count"] == 1
             assert v3["vehicle"]["analyses_since_paste"] == 0
             assert v3["vehicle"]["tables"]["spark"]["values"] != t["values"]
+            # ...and the record now carries "what changed since my last paste"
+            td = v3["vehicle"]["table_diffs"]
+            assert td and "spark" in td
+            assert td["spark"]["changed"] == td["spark"]["compared"] == 16
+            assert td["spark"]["max_delta"] == 2.0 and td["spark"]["prev_pasted"]
+            assert td["spark"]["cells"][0]["after"] == \
+                td["spark"]["cells"][0]["before"] + 2.0
         finally:
             httpd.shutdown()
 

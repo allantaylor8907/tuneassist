@@ -1086,6 +1086,39 @@ def correction_tsv(cr) -> str | None:
     return grid_tsv(grid, "percent")
 
 
+def ve_abs_tsv(cr) -> str | None:
+    """The COMPLETE new VE / base-fuel table -- the user's own values with the
+    recommended correction applied -- in the table's own layout (MAP rows x RPM
+    cols, the user's paste order). Paste it over the whole table as a plain
+    paste (NOT Paste Special -> Multiply). Cells the log didn't cover (or below
+    min-samples) keep the ORIGINAL value, never 0. Needs the pasted VE table
+    WITH values; the correction grid is already relabeled to those breakpoints
+    when the axes came from this table."""
+    res = getattr(cr, "result", None)
+    grid = getattr(res, "correction", None) if res is not None else None
+    t = (getattr(cr, "tables", None) or {}).get("ve")
+    if grid is None or getattr(grid, "empty", True) or not getattr(cr, "ve_axes", None) \
+            or not t or not t.get("values"):
+        return None
+    rpm_user, map_user, vals = t["rpm"], t["map"], t["values"]
+    if list(grid.index) != list(rpm_user) or list(grid.columns) != list(map_user):
+        return None                        # grid wasn't binned to this table
+    rows = []
+    for mi, mp in enumerate(map_user):
+        row = []
+        for ri, rp in enumerate(rpm_user):
+            try:
+                v = float(vals[mi][ri])
+            except (IndexError, TypeError, ValueError):
+                return None
+            m = grid.loc[rp, mp]
+            if not pd.isna(m):
+                v = v * float(m)
+            row.append(_tsv_num(v))
+        rows.append("\t".join(row))
+    return "\n".join(rows)
+
+
 def maf_tsv(cr) -> str | None:
     """The MAF Airflow-vs-Frequency correction as a single percent TSV row."""
     maf = getattr(cr, "maf", None)
@@ -1207,6 +1240,28 @@ def result_to_dict(cr: CoreResult) -> dict:
             "cells": _grid_cells(res.correction, getattr(res, "samples", None),
                                  transform=lambda v: round((v - 1.0) * 100, 2)),
         }
+        # table-aware: when the user's VE/base-fuel table (with values) is on
+        # file and the grid was binned to its axes, every cell also carries the
+        # absolute current -> target value (current x the correction).
+        ve_t = (cr.tables or {}).get("ve") if cr.tables else None
+        grid = res.correction
+        if ve_t and ve_t.get("values") and cr.ve_axes \
+                and list(grid.index) == list(ve_t["rpm"]) \
+                and list(grid.columns) == list(ve_t["map"]):
+            cur_at = {}
+            for mi, mp in enumerate(ve_t["map"]):
+                for ri, rp in enumerate(ve_t["rpm"]):
+                    try:
+                        cur_at[(_interval_label(rp), _interval_label(mp))] = \
+                            float(ve_t["values"][mi][ri])
+                    except (IndexError, TypeError, ValueError):
+                        pass
+            for c in d["correction"]["cells"]:
+                cur = cur_at.get((c["rpm"], c["map"]))
+                if cur is not None:
+                    c["current"] = round(cur, 2)
+                    c["target"] = round(cur * (1.0 + c["value"] / 100.0), 2)
+            d["correction"]["has_table"] = True
         rec = getattr(res, "recommendation", None)
         if rec is not None and not rec.empty:
             d["cross_check"] = [{"rpm": c["rpm"], "map": c["map"], "label": c["value"]}
@@ -1276,6 +1331,7 @@ def result_to_dict(cr: CoreResult) -> dict:
         d["channel_coverage"] = cr.channel_coverage
     tsv = {}
     builders = [("correction", lambda: correction_tsv(cr)),
+                ("ve_abs", lambda: ve_abs_tsv(cr)),
                 ("maf", lambda: maf_tsv(cr)),
                 # spark: pulls-only (safe default) + a *_power variant with the
                 # ADDs applied; the GUI picks by the "Add power" toggle.
@@ -1384,6 +1440,58 @@ def compare_results(a: dict, b: dict) -> dict:
 
     return {"headline": headline, "metrics": metrics, "findings": findings,
             "stage": stage, "correction_delta": corr_delta}
+
+
+def diff_table(old: dict, new: dict) -> dict | None:
+    """Diff two versions of the SAME pasted tune table (a garage table_history
+    entry vs the current one). Cells match by breakpoint VALUE, not position, so
+    an axis edit between pastes only drops the moved cells from the comparison.
+    Handles 2-D grids (rpm/map/values) and the 1-D MAF calibration (hz/values).
+    Returns {changed, compared, max_delta, at, cells} or None when either side
+    lacks values (or nothing is comparable). cells are sorted biggest-|delta|
+    first and capped so a whole-table repaste stays JSON-friendly."""
+    if not isinstance(old, dict) or not isinstance(new, dict) \
+            or not old.get("values") or not new.get("values"):
+        return None
+    cells = []
+    if "hz" in old or "hz" in new:                       # 1-D MAF calibration
+        o = dict(zip(old.get("hz") or [], old["values"]))
+        n = dict(zip(new.get("hz") or [], new["values"]))
+        shared = [h for h in (new.get("hz") or []) if h in o]
+        for h in shared:
+            try:
+                b, a = float(o[h]), float(n[h])
+            except (TypeError, ValueError):
+                continue
+            if round(a - b, 2):
+                cells.append({"hz": h, "before": round(b, 2), "after": round(a, 2),
+                              "delta": round(a - b, 2)})
+    else:                                                # 2-D grid
+        def index(t):
+            out = {}
+            for mi, mp in enumerate(t.get("map") or []):
+                for ri, rp in enumerate(t.get("rpm") or []):
+                    try:
+                        out[(rp, mp)] = float(t["values"][mi][ri])
+                    except (IndexError, TypeError, ValueError):
+                        pass
+            return out
+        o, n = index(old), index(new)
+        shared = [k for k in n if k in o]
+        for rp, mp in shared:
+            b, a = o[(rp, mp)], n[(rp, mp)]
+            if round(a - b, 2):
+                cells.append({"rpm": rp, "map": mp, "before": round(b, 2),
+                              "after": round(a, 2), "delta": round(a - b, 2)})
+    if not shared:
+        return None
+    cells.sort(key=lambda c: -abs(c["delta"]))
+    worst = cells[0] if cells else None
+    return {"changed": len(cells), "compared": len(shared),
+            "max_delta": worst["delta"] if worst else 0.0,
+            "at": ({k: worst[k] for k in ("rpm", "map", "hz") if k in worst}
+                   if worst else None),
+            "cells": cells[:200]}
 
 
 def _find_interval(index, label: str):
