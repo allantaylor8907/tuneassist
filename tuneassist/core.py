@@ -53,6 +53,10 @@ class SessionOpts:
     # (absolute spark targets, ceiling caps, table sanity checks); when present,
     # the axes above are derived from them automatically.
     tables: dict | None = None
+    # Free-text "what's it doing?" complaint (symptoms.py). Optional; matched
+    # offline against the symptom taxonomy to pin related findings and flag
+    # when the log doesn't cover the described situation.
+    complaint: str | None = None
 
 
 def opts_to_record(platform: str, opts: "SessionOpts") -> dict:
@@ -467,6 +471,7 @@ class CoreResult:
     spark_axes: dict | None = None         # the custom spark table axes used, if any
     tables: dict | None = None             # the cleaned pasted tune tables, if any
     channel_coverage: dict | None = None   # logged vs missing channels for this log
+    complaint: dict | None = None          # recognized symptoms + coverage gaps
 
     @property
     def has_grid(self) -> bool:
@@ -642,6 +647,22 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
         except Exception as e:   # pragma: no cover - defensive
             notes.append(f"No-start diagnosis skipped: {e}")
 
+    # "What's it doing?" -- recognize the user's complaint (offline taxonomy),
+    # pin the findings that speak to it, and flag when the log doesn't cover
+    # the situation they described. A prior over the findings, never a source.
+    complaint_info = None
+    if (opts.complaint or "").strip():
+        try:
+            from . import symptoms
+            matched = symptoms.match(opts.complaint)
+            cov = symptoms.region_coverage(df, col, cfg)
+            related, gaps = symptoms.relate(matched, findings, cov)
+            findings = symptoms.reorder(findings, related)
+            complaint_info = {"text": opts.complaint.strip(), "matched": matched,
+                              "related_ids": related, "gaps": gaps}
+        except Exception as e:               # pragma: no cover - defensive
+            notes.append(f"Complaint matching skipped: {e}")
+
     if eth_note:
         findings.append(diagnostics.Finding(
             "FUEL_ETHANOL", "info", "Flex fuel (ethanol) detected", eth_note,
@@ -685,7 +706,8 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
                       result=result, spark=spark, maf=maf, prescription=rx,
                       empty_reason=empty_reason, findings=findings, notes=notes,
                       timeseries=ts, ve_axes=ve_axes, spark_axes=spark_axes,
-                      tables=tables, channel_coverage=coverage)
+                      tables=tables, channel_coverage=coverage,
+                      complaint=complaint_info)
 
 
 # --------------------------------------------------------------------------
@@ -1329,6 +1351,8 @@ def result_to_dict(cr: CoreResult) -> dict:
         d["spark_axes"] = cr.spark_axes    # the custom spark table axes used
     if cr.channel_coverage:
         d["channel_coverage"] = cr.channel_coverage
+    if cr.complaint:
+        d["complaint"] = cr.complaint      # {text, matched, related_ids, gaps}
     tsv = {}
     builders = [("correction", lambda: correction_tsv(cr)),
                 ("ve_abs", lambda: ve_abs_tsv(cr)),
