@@ -111,6 +111,28 @@ def _opts_from_payload(p: dict) -> tuple[str | None, core.SessionOpts]:
     return platform, opts
 
 
+def _table_diffs(rec: dict) -> dict | None:
+    """Per-table diff between the CURRENT pasted tables and the most recent
+    archived version in table_history -- 'what changed since my last paste'.
+    Keyed by table slot (ve/spark/maf); a table with no history (or no change)
+    is omitted."""
+    tables = rec.get("tables") or {}
+    hist = rec.get("table_history") or []
+    out = {}
+    for key, cur in tables.items():
+        prev = next((h for h in reversed(hist) if h.get("table") == key), None)
+        if not isinstance(prev, dict) or not isinstance(cur, dict):
+            continue
+        try:
+            d = core.diff_table(prev, cur)
+        except Exception:                  # pragma: no cover - defensive
+            d = None
+        if d:
+            d["prev_pasted"] = prev.get("pasted")
+            out[key] = d
+    return out or None
+
+
 def _vehicle_record(state: GuiState, name: str) -> dict | None:
     rec = garage.get(state.data, name)
     if rec is None:
@@ -133,6 +155,8 @@ def _vehicle_record(state: GuiState, name: str) -> dict | None:
             # history stays server-side -- only its size is surfaced.
             "tables": rec.get("tables"),
             "table_history_count": len(rec.get("table_history", [])),
+            # 'what changed since my last paste' -- diff vs the newest archive
+            "table_diffs": _table_diffs(rec),
             "analyses_since_paste": rec.get("analyses_since_paste", 0),
             "history": rec.get("history", [])}
 

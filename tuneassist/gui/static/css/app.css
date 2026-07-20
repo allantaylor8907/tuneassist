@@ -149,6 +149,22 @@ input, select { font: inherit; color: var(--text); background: var(--bg-2);
 .tbl-onfile { font-size: 12px; color: var(--text-3); margin: -4px 0 8px; }
 .tbl-onfile.has { color: var(--opp); }
 .tbl-onfile.has::before { content: "✓ "; }
+/* "since your last paste" diff (garage table history) */
+.tbl-diff { margin: -2px 0 8px; }
+.tbl-diff:empty { margin: 0; }
+.tbl-diff-x summary { cursor: pointer; font-size: 12px; color: var(--accent);
+  list-style: none; font-weight: 540; }
+.tbl-diff-x summary::-webkit-details-marker { display: none; }
+.tbl-diff-x summary::before { content: "\0394 "; opacity: .7; }
+.tbl-diff-t { margin: 8px 0 4px; border-collapse: collapse; font-size: 12px;
+  font-family: var(--mono); }
+.tbl-diff-t th { text-align: left; font-weight: 570; color: var(--text-3);
+  font-family: var(--font); padding: 2px 14px 4px 0; border-bottom: 1px solid var(--line); }
+.tbl-diff-t td { padding: 3px 14px 3px 0; color: var(--text-2);
+  border-bottom: 1px solid var(--line); }
+.tbl-diff-t td.d-up { color: var(--add); }
+.tbl-diff-t td.d-down { color: var(--pull); }
+.tbl-diff-more { color: var(--text-3); font-family: var(--font); }
 .axes-manual { margin-top: 12px; }
 .axes-manual summary { cursor: pointer; font-size: 12.5px; color: var(--accent); font-weight: 540;
   list-style: none; }

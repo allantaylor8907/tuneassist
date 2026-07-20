@@ -400,6 +400,33 @@ function openSetup(vehicle) {
   onfile($("#tbl-spark-onfile"), tables.spark, "grid");
   onfile($("#tbl-maf-onfile"), tables.maf, "row");
 
+  // "what changed since my last paste" -- server-computed diff vs the newest
+  // archived version of each table (garage table_history).
+  const diffs = (vehicle && vehicle.table_diffs) || {};
+  const sign = v => (v > 0 ? "+" : "") + v;
+  function diffline(el, dif, kind) {
+    if (!el) return;
+    if (!dif || !dif.changed) { el.innerHTML = ""; return; }
+    const at = dif.at ? (kind === "row" ? `${dif.at.hz} Hz`
+      : `${dif.at.rpm} rpm / ${dif.at.map} kPa`) : "";
+    const when = dif.prev_pasted ? ` (previous paste ${String(dif.prev_pasted).slice(0, 10)})` : "";
+    const rows = (dif.cells || []).slice(0, 12).map(c =>
+      `<tr><td>${kind === "row" ? c.hz + " Hz" : c.rpm + " rpm · " + c.map + " kPa"}</td>` +
+      `<td>${c.before} → ${c.after}</td>` +
+      `<td class="${c.delta > 0 ? "d-up" : "d-down"}">${sign(c.delta)}</td></tr>`).join("");
+    const more = dif.changed > 12
+      ? `<tr><td colspan="3" class="tbl-diff-more">… and ${dif.changed - 12} more cell${dif.changed - 12 > 1 ? "s" : ""}</td></tr>` : "";
+    el.innerHTML = `<details class="tbl-diff-x">
+      <summary>Since your last paste: <strong>${dif.changed}</strong> of ${dif.compared} cells changed
+        · biggest <strong>${sign(dif.max_delta)}</strong>${at ? " at " + at : ""}${when}</summary>
+      <table class="tbl-diff-t"><thead><tr><th>${kind === "row" ? "Frequency" : "Cell"}</th>
+        <th>was → now</th><th>Δ</th></tr></thead><tbody>${rows}${more}</tbody></table>
+    </details>`;
+  }
+  diffline($("#tbl-ve-diff"), diffs.ve, "grid");
+  diffline($("#tbl-spark-diff"), diffs.spark, "grid");
+  diffline($("#tbl-maf-diff"), diffs.maf, "row");
+
   $("#axes-adv").open = !!(ax || sax || tables.ve || tables.spark || tables.maf);
   updateAxesStatus();
 
@@ -762,7 +789,10 @@ function buildChartShells(d) {
   let html = "";
   if (d.correction && d.correction.cells && d.correction.cells.length) {
     const axN = d.ve_axes ? `${d.ve_axes.rpm.length}×${d.ve_axes.map.length}` : null;
-    const sub = axN
+    const hasVeTable = !!d.correction.has_table;
+    const sub = hasVeTable
+      ? `absolute: current → target, matched to your VE table (${axN})`
+      : axN
       ? `% change per cell — matched to your VE table (${axN})`
       : `% change per RPM × MAP cell — hover any cell`;
     html += `
@@ -770,7 +800,8 @@ function buildChartShells(d) {
       <div class="ch-head">
         <h3>VE / fuel correction</h3><span class="ch-sub">${sub}</span>
         <div class="ch-actions">
-          ${d.tsv && d.tsv.correction ? `<button id="copy-grid-tsv">Copy for VCM/Holley (TSV)</button>` : ""}
+          ${d.tsv && d.tsv.ve_abs ? `<button id="copy-ve-abs" class="primary">Copy new VE table</button>` : ""}
+          ${d.tsv && d.tsv.correction ? `<button id="copy-grid-tsv">Copy % changes (TSV)</button>` : ""}
         </div>
       </div>
       <div id="ve-heatmap" class="chart-box"></div>
@@ -778,8 +809,10 @@ function buildChartShells(d) {
         <div class="why-body">Each cell is how far the fuel model is off at that RPM (rows)
         and engine load (columns, manifold pressure in kPa). <strong>Warm cells = the engine ran lean
         there; raise VE / add fuel.</strong> <strong>Cool cells = rich; pull fuel.</strong> Faint cells
-        didn't get enough samples to trust — drive more in that zone. Paste the TSV into the matching
-        table with Paste Special → Multiply by Percentage; zeros leave a cell unchanged.</div>
+        didn't get enough samples to trust — drive more in that zone.
+        ${hasVeTable
+          ? "Your VE table is on file, so hovering a cell shows the <strong>absolute value to type in</strong> (current → target). <strong>Copy new VE table</strong> gives your complete table with the changes applied — select the whole table and plain-paste (Ctrl+V); cells the log didn't cover keep your original values."
+          : "Paste the TSV into the matching table with Paste Special → Multiply by Percentage; zeros leave a cell unchanged."}</div>
       </details>
     </div>`;
   }
@@ -907,6 +940,9 @@ function wireReport(d) {
   if (cg) cg.onclick = () => copyText(d.tsv.correction, d.ve_axes
     ? "Copied — laid out to match your table. In VCM Editor: click the top-left VE cell → Edit → Paste Special → Multiply by Percentage. (Holley: paste into Base Fuel.)"
     : "Copied. In VCM Editor: select the matching VE cells → Edit → Paste Special → Multiply by Percentage. (Holley: paste into Base Fuel.)");
+  const cva = $("#copy-ve-abs");
+  if (cva) cva.onclick = () => copyText(d.tsv.ve_abs,
+    "Copied your COMPLETE new VE table. Select the whole table (top-left cell) and plain-paste (Ctrl+V) — cells the log didn't cover keep your original values.");
   const cm = $("#copy-maf-tsv");
   if (cm) cm.onclick = () => copyText(d.tsv.maf,
     "Copied the MAF row. Paste into the MAF calibration (Multiply by Percentage) — not the VE table.");
@@ -974,7 +1010,8 @@ function veHeatmap(el, d) {
   const cells = d.correction.cells;
   const rpmL = axisSort([...new Set(cells.map(c => c.rpm))]);
   const mapL = axisSort([...new Set(cells.map(c => c.map))]);
-  const data = cells.map(c => [mapL.indexOf(c.map), rpmL.indexOf(c.rpm), c.value, c.samples || 0]);
+  const data = cells.map(c => [mapL.indexOf(c.map), rpmL.indexOf(c.rpm), c.value, c.samples || 0,
+                               c.current, c.target]);
   const lim = Math.max(5, ...cells.map(c => Math.abs(c.value)));
   // hide in-cell labels when cells get cramped (narrow window / many columns)
   const cellW = (el.clientWidth - 182) / Math.max(1, mapL.length);
@@ -997,11 +1034,13 @@ function veHeatmap(el, d) {
       textStyle: { color: C.text3, fontSize: 11 },
       inRange: { color: [C.pull, C.bg2, C.add] } },
     tooltip: { confine: true, formatter: p => {
-      const v = p.value[2], n = p.value[3];
+      const v = p.value[2], n = p.value[3], cur = p.value[4], tgt = p.value[5];
       const verb = v > 1 ? "ran LEAN here — raise VE / add fuel"
                  : v < -1 ? "ran RICH here — pull fuel" : "on target — leave it";
+      const abs = (cur != null && tgt != null)
+        ? `<br><b>now ${cur} → set ${tgt}</b>` : "";
       return `<b>${rpmL[p.value[1]]} RPM × ${mapL[p.value[0]]} kPa</b><br>` +
-             `${v > 0 ? "+" : ""}${v}% · ${n} samples<br><span style="opacity:.75">${verb}</span>`;
+             `${v > 0 ? "+" : ""}${v}% · ${n} samples${abs}<br><span style="opacity:.75">${verb}</span>`;
     } },
     series: [{ type: "heatmap", data, label: { show: showLabels, fontSize: 10,
       color: C.text, formatter: p => (p.value[2] > 0 ? "+" : "") + p.value[2].toFixed(1) },

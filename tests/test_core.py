@@ -693,6 +693,60 @@ def test_spark_adds_always_computed_pulls_only_by_default():
     assert n_nonzero(dd["tsv"]["spark_power"]) > n_nonzero(dd["tsv"]["spark"])
 
 
+def test_ve_table_gives_absolute_current_target_and_full_tsv():
+    # with the VE table (values) on file, correction cells carry the absolute
+    # current -> target value and tsv.ve_abs is the complete new table.
+    import tempfile
+    from tuneassist import core
+    rpm_bp = [800, 1600, 2400, 3200, 4000, 4800, 5600, 6400]
+    map_bp = [20, 40, 60, 80, 100]
+    tbl = "\t".join(["%"] + [str(r) for r in rpm_bp]) + "\trpm\n"
+    for mp in map_bp:
+        tbl += "\t".join([str(mp)] + ["55"] * len(rpm_bp)) + "\n"
+    tbl += "kPa"
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "log.csv")
+        _synthetic_gm_log(p)
+        cr = analyze_log(p, _opts(tables={"ve": {"table": tbl}}), out_dir=None)
+    dd = cr.to_dict()
+    corr = dd["correction"]
+    assert corr.get("has_table") is True
+    withabs = [c for c in corr["cells"] if "current" in c]
+    assert withabs, "covered cells should carry absolute current/target"
+    for c in withabs:
+        assert c["current"] == 55
+        assert c["target"] == round(55 * (1 + c["value"] / 100.0), 2)
+    # the absolute TSV is the FULL table (5 MAP rows x 8 RPM cols); uncovered
+    # cells keep the original 55, covered ones moved off it
+    rows = dd["tsv"]["ve_abs"].split("\n")
+    assert len(rows) == len(map_bp) and all(len(r.split("\t")) == len(rpm_bp) for r in rows)
+    flat = [v for r in rows for v in r.split("\t")]
+    assert "0" not in flat and any(v != "55" for v in flat)
+
+
+def test_diff_table_grid_maf_and_axis_tolerance():
+    from tuneassist.core import diff_table
+    old = {"rpm": [400, 800], "map": [20, 40], "values": [[50, 55], [52, 57]]}
+    new = {"rpm": [400, 800], "map": [20, 40], "values": [[50, 56], [52, 57]]}
+    d = diff_table(old, new)
+    assert d["changed"] == 1 and d["compared"] == 4
+    assert d["max_delta"] == 1.0 and d["at"] == {"rpm": 800, "map": 20}
+    assert d["cells"][0]["before"] == 55 and d["cells"][0]["after"] == 56
+    # an axis edit only drops the moved cells from the comparison
+    moved = {"rpm": [400, 1200], "map": [20, 40], "values": [[50, 60], [52, 60]]}
+    d2 = diff_table(old, moved)
+    assert d2["compared"] == 2 and d2["changed"] == 0
+    # 1-D MAF calibration
+    mo = {"hz": [1000, 2000, 3000, 4000], "values": [10, 20, 30, 40]}
+    mn = {"hz": [1000, 2000, 3000, 4000], "values": [10, 20, 33, 40]}
+    dm = diff_table(mo, mn)
+    assert dm["changed"] == 1 and dm["at"] == {"hz": 3000}
+    assert dm["cells"][0]["delta"] == 3
+    # no values on either side -> nothing to diff
+    assert diff_table({"rpm": [1, 2], "map": [1, 2], "values": None}, new) is None
+    assert diff_table(None, new) is None
+
+
 def test_no_axes_keeps_default_interval_bins():
     cr = analyze_log(os.path.join(FIX, "ride42.csv"), _opts(), out_dir=None)
     assert cr.ve_axes is None

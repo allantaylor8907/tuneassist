@@ -131,7 +131,16 @@ tunable state.
   The GUI server versions them: an upsert with CHANGED values archives the prior
   copy to `table_history` (cap 10) and resets `analyses_since_paste`; each
   analyze of a saved car increments it, and `to_dict`'s `tables_meta.stale`
-  (>=2) drives the GUI's "re-paste your tables" banner.
+  (>=2) drives the GUI's "re-paste your tables" banner. `server._table_diffs`
+  diffs the current tables against the newest `table_history` entry per slot
+  (`core.diff_table` -- cells matched by breakpoint VALUE, so an axis edit just
+  drops the moved cells) -> `table_diffs` on the vehicle record -> the setup
+  section's "since your last paste" expander. **Table-aware VE** (mirrors the
+  spark treatment): with the VE table's VALUES on file, to_dict correction
+  cells carry absolute current->target (`correction.has_table`), the heatmap
+  tooltip shows "now X -> set Y", and `ve_abs_tsv` emits the COMPLETE new VE
+  table (uncovered cells keep the ORIGINAL value) as `tsv.ve_abs` for a plain
+  full-table paste ('Copy new VE table').
 - `legacy/` (repo root) — **the retired Textual TUI**, preserved per the
   retention policy: `tui.py`, `panels.py`, `demo.py`, `demo-serve/`, and their
   pilot-harness tests. Retired at the v2 cutover (last shipped in v0.1.21) so
