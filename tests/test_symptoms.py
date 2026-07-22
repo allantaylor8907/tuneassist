@@ -43,6 +43,66 @@ def test_match_recognizes_plain_english():
     assert symptoms.match(None) == []
 
 
+def test_expanded_symptoms_recognized():
+    # the v0.1.25 expansion: newer complaint classes users actually type
+    cases = {
+        "it lugs and chugs going up a hill": {"lugging"},
+        "exhaust pops and crackles when I let off": {"decel_pop"},
+        "stalls in gear when I come to a stop": {"stalls_load"},
+        "dies when I turn the AC on": {"stalls_load"},
+        "the RPM hangs at 1500 after I let off the throttle": {"idle_hang"},
+        "won't idle back down": {"idle_hang"},
+        "it cuts out at 6500 and hits a wall": {"power_cut"},
+        "shudders at highway speed": {"shudder"},
+        "shifts really hard into second": {"trans_shift"},
+        "won't lock up the converter": {"trans_shift"},
+        "check engine light is on, threw a P0171": {"cel"},
+        "terrible gas mileage lately": {"bad_mpg"},
+        "the fuel trims are all over the place": {"trims_drift"},
+        "it floods when I try to start it": {"flooding"},
+        "stalls until it warms up": {"cold_stall"},
+    }
+    for text, expect in cases.items():
+        got = {m["id"] for m in symptoms.match(text)}
+        assert expect <= got, f"{text!r}: expected {expect}, got {got}"
+
+
+def test_taxonomy_ids_are_real_and_unique():
+    # every finding_id a symptom points at must be a REAL detector id (a typo'd
+    # id would silently never pin), and symptom ids must be unique.
+    import re
+    ids = set()
+    for mod in ("diagnostics", "crank"):
+        src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                "tuneassist", mod + ".py"), encoding="utf-8").read()
+        ids |= set(re.findall(r"Finding\(\s*[\"']([A-Z0-9_]+)", src))
+    sym_ids = [s["id"] for s in symptoms.TAXONOMY]
+    assert len(sym_ids) == len(set(sym_ids)), "duplicate symptom id"
+    assert len(symptoms.TAXONOMY) >= 26, "expected the expanded taxonomy"
+    for s in symptoms.TAXONOMY:
+        for fid in s["finding_ids"]:
+            assert fid in ids, f"{s['id']} points at unknown finding {fid}"
+        assert s["region"] in (None, *symptoms.REGION_LABEL), s["id"]
+
+
+def test_negation_is_not_a_match():
+    # a symptom mentioned only to say it's NOT happening must not be recognized
+    for text in ("it doesn't ping anymore", "no longer stalls when hot",
+                 "not running hot", "the knock went away", "used to bog but not now"):
+        assert symptoms.match(text) == [] or all(
+            m["id"] not in ("knock", "dies_hot", "overheat", "hesitation")
+            for m in symptoms.match(text)), text
+    # ...but a real complaint that merely CONTAINS a negator word still matches
+    assert any(m["id"] == "no_power" for m in symptoms.match("no power up top"))
+    assert any(m["id"] == "hard_start" for m in symptoms.match("it will not start"))
+
+
+def test_emphatic_typos_normalize():
+    assert any(m["id"] == "hesitation" for m in symptoms.match("it bogggs when I floor it"))
+    assert any(m["id"] == "rough_idle" for m in symptoms.match("idles rouuugh"))
+    assert any(m["id"] == "knock" for m in symptoms.match("I hear knnnock"))
+
+
 def test_region_coverage_flags_missing_regions():
     n = 2000
     # an idle-only log: no WOT, no cruise, warm the whole time

@@ -19,6 +19,35 @@ import re
 
 import pandas as pd
 
+# Cheap typo tolerance: collapse 3+ repeated LETTERS to one ("boggg" -> "bog",
+# "rouuugh" -> "rough") so emphatic spellings still hit the stems (English has
+# essentially no real triple letters). Digits are left alone so "3000 rpm"
+# survives. Real misspellings (transpositions like "stumbel") are out of scope
+# for the regex layer -- that's where a future local embedding model would earn
+# its keep.
+_REPEAT = re.compile(r"([a-z])\1{2,}")
+
+# Negation guard. Unambiguous negators ONLY, and only when they sit immediately
+# before the match ("doesn't ping", "no longer stalls") or a "gone" marker
+# follows ("pings ... anymore"). A missed negation merely over-pins a finding
+# that's still in the report; over-negating would DROP a real complaint, so we
+# stay conservative -- note there is no bare "no"/"none" (would eat "no power").
+_NEG_BEFORE = re.compile(
+    r"\b(?:not|never|no longer|hardly|barely|used to|stopped|quit|"
+    r"doesn'?t|didn'?t|don'?t|isn'?t|wasn'?t|aren'?t|won'?t|can'?t|"
+    r"hasn'?t|haven'?t|without)\b\W*$")
+_NEG_AFTER = re.compile(r"^\W*(?:anymore|no more|went away|all gone|fixed now)\b")
+
+
+def _negated(text: str, start: int, end: int) -> bool:
+    """True if the match at [start:end] is inside a negation. Small windows keep
+    'no matter'/'not sure if' from over-firing -- the negator must be the last
+    token before the hit, or a 'gone' marker the first token after it."""
+    before = text[max(0, start - 20):start]
+    after = text[end:end + 14]
+    return bool(_NEG_BEFORE.search(before)) or bool(_NEG_AFTER.match(after))
+
+
 # Each symptom: how users say it (patterns, case-insensitive), which diagnostic
 # finding ids speak to it, which log REGION must be covered to investigate it,
 # and what to capture when that region is missing. Multiple symptoms can match
@@ -85,7 +114,8 @@ TAXONOMY = [
      "region": None, "capture": None},
 
     {"id": "hard_start", "label": "hard starting / no start",
-     "patterns": [r"hard (?:to )?start\w*", r"long crank\w*", r"won'?t (?:start|fire|catch)",
+     "patterns": [r"hard (?:to )?start\w*", r"long crank\w*",
+                  r"(?:won'?t|will not|wont|can'?t|cannot) (?:start|fire|catch|crank|turn over)",
                   r"cranks? but", r"no.?start", r"slow crank\w*",
                   r"takes? (?:forever|a while|a few tries) to (?:start|fire|catch)"],
      "finding_ids": ["NOSTART_NO_INJECTION", "NOSTART_LOW_FUEL_PRESSURE", "NOSTART_FLOODED",
@@ -95,7 +125,9 @@ TAXONOMY = [
      "capture": "log from key-ON through the whole start attempt (don't start logging after it's running)"},
 
     {"id": "dies_hot", "label": "stalls / won't restart when hot",
-     "patterns": [r"(?:dies|stalls?)[^.]*\b(?:warm|hot|heat)", r"hot.?start",
+     "patterns": [r"(?:dies|stalls?)[^.]*\b(?:hot|heat)\b",
+                  r"(?:dies|stalls?)[^.]*\b(?:once|when|after)[^.]*\bwarm(?:ed)?\b",
+                  r"hot.?start",
                   r"won'?t (?:re)?start[^.]*hot", r"(?:when|once) (?:it'?s )?hot[^.]*\b(?:dies|stalls?)"],
      "finding_ids": ["HIGH_IAT", "LOW_FUEL_PRESSURE", "IDLE_LOW", "IAC_CLOSED", "LOW_VOLTAGE"],
      "region": None, "capture": None},
@@ -130,6 +162,115 @@ TAXONOMY = [
                      "STARTUP_FLARE", "STARTUP_SAG", "THERMOSTAT"],
      "region": "warmup",
      "capture": "log a cold start from key-on and let it warm up on camera (in the log)"},
+
+    {"id": "lugging", "label": "lugging / chuggy under light load",
+     "patterns": [r"\blug\w*", r"chug\w*", r"loads? up", r"loading up",
+                  r"won'?t pull (?:from|down low|off idle|in \w+ gear)",
+                  r"doesn'?t (?:want to )?pull (?:down low|from (?:down )?low)",
+                  r"(?:flat|soft|dead)[^.]*\b(?:down low|low.?end|bottom end)"],
+     "finding_ids": ["LEAN_CRUISE", "RICH_CRUISE", "TIMING_BELOW_COMMAND", "KNOCK"],
+     "region": "cruise",
+     "capture": "log some light-throttle low-RPM lugging (high gear, gentle load)"},
+
+    {"id": "decel_pop", "label": "pops / crackles on decel",
+     "patterns": [r"decel\w*[^.]*\b(?:pop|crackl|burbl|bang|snap)",
+                  r"(?:pop|crackl|burbl|snap)\w*[^.]*\b(?:decel|let(?:ting)? off|lift\w* off|off.?throttle|coast\w*|overrun)",
+                  r"(?:exhaust|it) (?:pops?|crackl\w+|burbl\w+)[^.]*\b(?:let off|decel|coast|off throttle)",
+                  r"overrun (?:pop|fuel|crackl)"],
+     "finding_ids": ["LEAN_CRUISE", "ENRICH_NOT_DECAYED", "VACUUM_LEAK"],
+     "region": None, "capture": None},
+
+    {"id": "stalls_load", "label": "stalls in gear / with AC / at a stop",
+     "patterns": [r"(?:stalls?|dies|quits?)[^.]*\b(?:in gear|in drive|in reverse|coming to (?:a )?stop|at a (?:stop|light)|when i (?:brake|stop|slow|turn)|braking|turning|put it in)",
+                  r"(?:a/?c|air ?conditioning)[^.]*\b(?:stall|dies|kills?|drops? (?:the )?idle|kills? (?:the )?idle)",
+                  r"(?:stalls?|dies)[^.]*\b(?:a/?c|air ?conditioning) on",
+                  r"drops? (?:the )?idle (?:in gear|with (?:the )?a/?c|when)"],
+     "finding_ids": ["IDLE_LOW", "IAC_CLOSED", "IDLE_AIRFLOW_OFF", "IDLE_HUNT",
+                     "ROLLING_IDLE_HANG"],
+     "region": "idle",
+     "capture": "log idle in gear (brake held) and with the A/C on, warmed up"},
+
+    {"id": "idle_hang", "label": "RPM hangs / slow to return to idle",
+     "patterns": [r"(?:rpm|idle|revs?)[^.]*\b(?:hang\w*|stays? up|won'?t (?:come|settle|drop) (?:down|back)|slow to (?:come down|return|drop|settle))",
+                  r"hangs? (?:up )?(?:at|around|near) \d{3,4}",
+                  r"won'?t idle (?:back )?down", r"revs? hang\w*",
+                  r"slow to (?:return|come back|drop|settle)[^.]*idle"],
+     "finding_ids": ["ROLLING_IDLE_HANG", "IDLE_HIGH", "IDLE_TIMING_SWING", "IAC_CLOSED"],
+     "region": "idle",
+     "capture": "blip the throttle and let it settle in the log (watch RPM come back down)"},
+
+    {"id": "power_cut", "label": "cuts out / hits a wall up top",
+     "patterns": [r"cuts? out[^.]*\b(?:at|when|under|wide open|wot|high rpm|up top|\d)",
+                  r"(?:power|fuel|spark|ignition) cut\w*", r"limp (?:mode|home)",
+                  r"hits? (?:a )?(?:wall|brick wall|rev limit\w*|limiter)",
+                  r"(?:falls?|drops?|noses?) (?:on its face|over|off)[^.]*\b(?:at|around|past|up top|\d)",
+                  r"(?:breaks? up|breaking up)[^.]*\b(?:up top|high rpm|top end|at \d)",
+                  r"won'?t (?:pull|go|rev) past \d"],
+     "finding_ids": ["INJ_DUTY", "WOT_LEAN", "TIMING_BELOW_COMMAND",
+                     "LOW_FUEL_PRESSURE", "FUEL_PRESSURE_DROP"],
+     "region": "wot",
+     "capture": "log a full pull to where it cuts (catch fuel pressure + injector duty)"},
+
+    {"id": "shudder", "label": "shudder / vibration at cruise",
+     "patterns": [r"shudder\w*", r"judder\w*", r"lock.?up shudder",
+                  r"tcc (?:shudder|slip\w*)",
+                  r"(?:shakes?|shaking|vibrat\w+|shimm\w+)[^.]*\b(?:cruise|light throttle|part throttle|lock.?up|highway|steady|at speed|\d\d ?mph|under load)"],
+     "finding_ids": ["TCC_SLIP", "TCC_NOT_LOCKING", "LEAN_CRUISE", "BANK_IMBALANCE"],
+     "region": "cruise",
+     "capture": "log a steady light-throttle cruise where the converter is locked"},
+
+    {"id": "trans_shift", "label": "harsh / wrong shifts, no lockup",
+     "patterns": [r"shifts?(?: \w+){0,2} (?:hard|harsh|early|late|weird|erratic|rough|firm|soft|mushy)",
+                  r"(?:bangs?|slams?|clunks?) (?:into )?(?:gear|shifts?|\dnd|\drd)",
+                  r"(?:harsh|hard|firm|soft|mushy|slipping|flar\w+) shift\w*",
+                  r"won'?t (?:lock ?up|lock the (?:torque )?converter)",
+                  r"(?:trans\w*|transmission|gearbox|converter)[^.]*\b(?:slip\w*|shift\w*|hunt\w*|flar\w+|won'?t lock|unlock\w*)"],
+     "finding_ids": ["TRANS_SHIFT_EARLY", "TCC_NOT_LOCKING", "TCC_SLIP", "LINE_PRESSURE_FLAT"],
+     "region": "cruise",
+     "capture": "log some normal-throttle up/down shifts and a highway cruise (converter lock)"},
+
+    {"id": "cel", "label": "check engine light / codes",
+     "patterns": [r"check engine", r"\bcel\b", r"\bmil\b", r"engine light",
+                  r"service engine", r"(?:throw\w*|threw|set\w*|has|got|pending) (?:a )?(?:code|codes|dtc)",
+                  r"\bp0\d{3}\b"],
+     "finding_ids": ["LOGGING_TIPS", "LEAN_CRUISE", "RICH_CRUISE", "TRIM_CLIPPING"],
+     "region": None, "capture": None},
+
+    {"id": "bad_mpg", "label": "bad fuel economy",
+     "patterns": [r"(?:bad|terrible|awful|poor|horrible|crap\w*|worse|worst|low|lousy) (?:gas ?)?(?:mileage|mpg|economy|fuel economy)",
+                  r"drink\w+ (?:gas|fuel)", r"guzzl\w+",
+                  r"(?:eats?|eating|burns?|burning|going through|goes through) (?:a lot of |through )?(?:gas|fuel)",
+                  r"\d\d?\s?mpg"],
+     "finding_ids": ["RICH_CRUISE", "IDLE_RICH", "WOT_RICH", "ENRICH_NOT_DECAYED"],
+     "region": "cruise",
+     "capture": "log a steady cruise (that's where fuel economy lives)"},
+
+    {"id": "trims_drift", "label": "fuel trims drifting / won't settle",
+     "patterns": [r"(?:trims?|ltft|stft|fuel trims?)[^.]*\b(?:drift\w*|climb\w*|swing\w*|jump\w*|all over|keep\w* (?:changing|moving)|maxed|pegg\w+|won'?t settle|never settle)",
+                  r"(?:long|short).?term (?:fuel )?trims?[^.]*\b(?:high|low|negative|maxed|-?\d\d)",
+                  r"(?:re-?learn\w*|relearn\w*)[^.]*\b(?:bad|worse|off|wrong|rich|lean)",
+                  r"trims? (?:won'?t|never|don'?t) settle"],
+     "finding_ids": ["TRIM_OSCILLATION", "TRIM_CLIPPING", "WB_VS_NB", "LEAN_CRUISE"],
+     "region": "cruise",
+     "capture": "log a long steady cruise so the trims have time to move"},
+
+    {"id": "flooding", "label": "floods / loads up on start",
+     "patterns": [r"flood\w+", r"smells? flooded",
+                  r"(?:wet|fouled|black|soaked) plugs? (?:after|when|on) (?:crank|start)",
+                  r"(?:dumps?|dumping) fuel (?:on|at|during) (?:start|crank)",
+                  r"washes? (?:down )?(?:the )?(?:cylinders?|bores?|walls?)"],
+     "finding_ids": ["NOSTART_FLOODED", "WARMUP_RICH", "IDLE_RICH"],
+     "region": "crank",
+     "capture": "log from key-ON through the start attempt (catch injector pulse + AFR)"},
+
+    {"id": "cold_stall", "label": "stalls / won't run until warm",
+     "patterns": [r"(?:stalls?|dies|quits?)[^.]*\b(?:until (?:it'?s? )?warm\w*|when (?:it'?s? )?cold|dead cold|first start\w*)",
+                  r"(?:won'?t|has to|have to|gotta) (?:idle|stay running|run|keep it running)[^.]*\b(?:until (?:it'?s? )?warm\w*|when cold|cold)",
+                  r"(?:have to|has to|gotta) (?:feather|hold|pump|nurse|two.?foot) (?:the )?(?:throttle|gas|pedal)[^.]*\b(?:cold|until (?:it'?s? )?warm)",
+                  r"(?:stalls?|dies)[^.]*\bcold\b"],
+     "finding_ids": ["WARMUP_LEAN", "IDLE_LOW", "THERMOSTAT", "STARTUP_SAG", "ENRICH_NOT_DECAYED"],
+     "region": "warmup",
+     "capture": "log a cold start from key-on and keep logging until it idles on its own"},
 ]
 
 REGION_LABEL = {"idle": "warm idle", "wot": "wide-open throttle / high load",
@@ -139,14 +280,18 @@ REGION_LABEL = {"idle": "warm idle", "wot": "wide-open throttle / high load",
 
 def match(text) -> list:
     """Recognize symptoms in free text. Returns [{'id','label'}] in taxonomy
-    order (empty when nothing matches -- the caller says so, honestly)."""
+    order (empty when nothing matches -- the caller says so, honestly). Emphatic
+    typos are normalized, and a negated mention ('doesn't ping anymore') does not
+    count -- a symptom needs at least one NON-negated hit to be recognized."""
     if not isinstance(text, str) or not text.strip():
         return []
-    t = " " + text.lower().strip() + " "
+    t = " " + _REPEAT.sub(r"\1", text.lower().strip()) + " "
     out = []
     for s in TAXONOMY:
-        if any(re.search(p, t) for p in s["patterns"]):
-            out.append({"id": s["id"], "label": s["label"]})
+        for p in s["patterns"]:
+            if any(not _negated(t, m.start(), m.end()) for m in re.finditer(p, t)):
+                out.append({"id": s["id"], "label": s["label"]})
+                break
     return out
 
 
