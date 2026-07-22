@@ -84,9 +84,13 @@ tunable state.
   readable "What I see / Likely / Do this" panel. ASCII-safe. Tested.
 - `symptoms.py` — **offline "what's it doing?" complaint matcher** (no network,
   no model, by explicit user requirement -- maybe a tiny bundled local model
-  someday, never an API). A curated symptom taxonomy (rough idle, bog, knock,
-  rich/lean, hard start, surge, misfire, boost, cold running...) with synonym
-  regexes: `match(text)` recognizes the complaint, `region_coverage(df,col,cfg)`
+  someday, never an API). A curated ~26-class symptom taxonomy (rough/hunting
+  idle, bog, down-on-power, knock, backfire, rich/lean, overheat, hard start,
+  hot-restart, cruise surge, misfire, boost, cold running, lugging, decel pop,
+  stalls-in-gear/AC, idle hang, power cut, shudder, harsh shifts, CEL, bad mpg,
+  trims drift, flooding, cold stall) with synonym regexes; `match()` is
+  NEGATION-AWARE ("doesn't ping anymore" doesn't fire) and normalizes emphatic
+  typos ("rouuugh"->"rough"): `match(text)` recognizes the complaint, `region_coverage(df,col,cfg)`
   checks which log regions (idle/wot/cruise/crank/boost/warmup) have samples,
   `relate`/`reorder` pin the findings that speak to the complaint FIRST and emit
   honest coverage gaps ("you said it stumbles at WOT but this log never gets
