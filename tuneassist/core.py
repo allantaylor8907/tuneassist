@@ -653,13 +653,17 @@ def analyze_log(path: str, opts: SessionOpts, platform: str | None = None,
     complaint_info = None
     if (opts.complaint or "").strip():
         try:
-            from . import symptoms
-            matched = symptoms.match(opts.complaint)
+            from . import symptoms, classify
+            # classify() runs the exact regex matcher first; only when it finds
+            # nothing does the offline fuzzy fallback propose softer guesses.
+            # Each match carries a source ('pattern' | 'fuzzy' | 'model').
+            matched = classify.classify(opts.complaint)
+            fuzzy = bool(matched) and all(m.get("source") != "pattern" for m in matched)
             cov = symptoms.region_coverage(df, col, cfg)
             related, gaps = symptoms.relate(matched, findings, cov)
             findings = symptoms.reorder(findings, related)
             complaint_info = {"text": opts.complaint.strip(), "matched": matched,
-                              "related_ids": related, "gaps": gaps}
+                              "related_ids": related, "gaps": gaps, "fuzzy": fuzzy}
         except Exception as e:               # pragma: no cover - defensive
             notes.append(f"Complaint matching skipped: {e}")
 

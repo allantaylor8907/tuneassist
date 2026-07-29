@@ -392,6 +392,11 @@ body[data-skill="expert"] .beginner-only { display: none; }
 .cmpl-heard .chip { margin: 0 2px; }
 .cmpl-gap { margin-top: 10px; font-size: 13.5px; color: var(--warn);
   background: var(--warn-bg); border-radius: var(--radius-sm); padding: 8px 12px; }
+/* fuzzy fallback match: softer, "did you mean" framing (lower confidence) */
+.cmpl-card.cmpl-fuzzy { border-left-color: var(--text-3); border-left-style: dashed; }
+.chip.soft { background: var(--bg-3); color: var(--text-2); border: 1px dashed var(--line-2); }
+.chip.soft small { opacity: .7; font-weight: 500; }
+.cmpl-soft-hint { display: block; margin-top: 6px; font-size: 12px; color: var(--text-3); }
 
 /* ============ channels-to-log modal ============ */
 .modal-wrap { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center;
