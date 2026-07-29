@@ -100,6 +100,22 @@ tunable state.
   has the box (Win+H dictation works for free), the report shows a "Heard you"
   card + tags matched findings, and the car remembers the last complaint
   (record['complaint'], persisted on analyze, prefills the box). Tested.
+- `classify.py` + `symptom_examples.py` — **the pluggable symptom classifier**
+  (Phase 1 of the offline local classifier). `classify(text)` runs the exact
+  regex `symptoms.match` FIRST; only when it finds nothing does a fallback
+  backend propose softer guesses. Every result carries `source`
+  ('pattern'|'fuzzy'|'model') + `score`, so the GUI shows a regex hit as a
+  confident "Heard you" and a fallback hit as a dashed "did you mean X 87%?"
+  card. The shipped backend `_FuzzyBackend` is STDLIB-only (difflib +
+  IDF-weighted keyword recall over `symptom_examples.EXAMPLES`, ~208 labeled
+  phrasings across the 26 symptoms) -- no deps, no model, no network; it
+  absorbs misspellings and word-order and roughly doubles held-out recall
+  (~0.54 regex-only -> ~0.87) at ~1 soft false positive. `set_backend()` lets a
+  Phase-2 offline ONNX embedding model slot in behind the SAME interface (the
+  eval harness `tests/test_symptoms_eval.py` is the yardstick it must beat);
+  no backend -> regex-only, never an error. A closed label set means a fallback
+  can never invent a symptom -- still a prior over diagnostics, never a source.
+  `core` calls `classify()`; `complaint.fuzzy` flags a fallback-only match.
 - `tables.py` — maps a recommended change → the **exact vendor table** to edit
   (GM HP Tuners table names + Holley table names). `core._name_tables` appends
   these to findings; `_primary_change_finding` names the lead table inline.

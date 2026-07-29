@@ -770,18 +770,27 @@ function buildVerdict(d) {
 function buildComplaint(d) {
   const c = d.complaint;
   if (!c) return "";
+  const fuzzy = !!c.fuzzy;                         // matched only via the fuzzy fallback
   const chips = (c.matched || []).map(m =>
-    `<span class="chip accent">${esc(m.label)}</span>`).join(" ");
-  const heard = c.matched && c.matched.length
-    ? `<div class="cmpl-heard">Heard you: ${chips}${
-        (c.related_ids || []).length
-          ? ` — <strong>${c.related_ids.length} finding${c.related_ids.length > 1 ? "s" : ""} below speak${c.related_ids.length > 1 ? "" : "s"} to it</strong> (pinned first, tagged ⤷ your complaint).`
-          : " — but nothing in this log's findings matches it directly. The coverage notes below may explain why."}</div>`
-    : `<div class="cmpl-heard">Couldn't match that to a known symptom — analysis ran normally.
-       Try words like "rough idle", "bogs when I floor it", "pings under load", "smells rich".</div>`;
+    `<span class="chip ${fuzzy ? "soft" : "accent"}">${esc(m.label)}${
+      fuzzy && m.score ? ` <small>${Math.round(m.score * 100)}%</small>` : ""}</span>`).join(" ");
+  const related = (c.related_ids || []).length;
+  const pinNote = related
+    ? ` — <strong>${related} finding${related > 1 ? "s" : ""} below speak${related > 1 ? "" : "s"} to it</strong> (pinned first, tagged ⤷ your complaint).`
+    : " — but nothing in this log's findings matches it directly. The coverage notes below may explain why.";
+  let heard;
+  if (!c.matched || !c.matched.length) {
+    heard = `<div class="cmpl-heard">Couldn't match that to a known symptom — analysis ran normally.
+       Try words like “rough idle”, “bogs when I floor it”, “pings under load”, “smells rich”.</div>`;
+  } else if (fuzzy) {
+    heard = `<div class="cmpl-heard">Not an exact match — <strong>did you mean</strong> ${chips}?${pinNote}
+       <span class="cmpl-soft-hint">(inferred from your wording; rephrase for a precise match.)</span></div>`;
+  } else {
+    heard = `<div class="cmpl-heard">Heard you: ${chips}${pinNote}</div>`;
+  }
   const gaps = (c.gaps || []).map(g =>
     `<div class="cmpl-gap">⚠ ${esc(g)}</div>`).join("");
-  return `<div class="card cmpl-card">
+  return `<div class="card cmpl-card${fuzzy ? " cmpl-fuzzy" : ""}">
     <div class="cmpl-quote">“${esc(truncate(c.text, 220))}”</div>
     ${heard}${gaps}
   </div>`;

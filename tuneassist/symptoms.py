@@ -91,7 +91,7 @@ TAXONOMY = [
 
     {"id": "backfire", "label": "backfires / pops",
      "patterns": [r"backfir\w*", r"afterfir\w*", r"\bpops?\b", r"popping",
-                  r"\bbangs?\b", r"sputter\w*", r"spits? (?:and|back)"],
+                  r"\bbangs?\b(?!\s+(?:into|in)\b)", r"sputter\w*", r"spits? (?:and|back)"],
      "finding_ids": ["LEAN_CRUISE", "WOT_LEAN", "IDLE_LEAN", "VACUUM_LEAK", "RICH_CRUISE"],
      "region": None, "capture": None},
 
