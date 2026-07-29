@@ -28,11 +28,13 @@ from .symptom_examples import EXAMPLES
 # Fallback confidence floor. Below this a fuzzy guess is too weak to show; tuned
 # against the eval harness (tests/test_symptoms_eval.py) to keep false positives
 # ~zero while still recovering real paraphrases the regex misses.
-# Tuned on the held-out eval (tests/test_symptoms_eval.py): at 0.56 the stdlib
-# fallback recovers ~87% of held-out paraphrases the regex misses with ~1 soft
-# false positive across the negative set. Residual misses (pure semantic
-# paraphrase, instrument-vs-symptom questions) are the embedding backend's job.
-FUZZY_THRESHOLD = 0.56
+# Tuned on the held-out eval (tests/test_symptoms_eval.py). With the synonym
+# layer + expanded EXAMPLES, at 0.60 the stdlib fallback recovers ~87% of the
+# held-out paraphrases the regex misses AND ~0.43 of the hard semantic ones
+# (which a general ONNX MiniLM only reached ~0.29 on -- benchmarked), at ~1 soft
+# false positive (an instrument-vs-symptom question). Residual misses are rare
+# slang; grow EXAMPLES/SYNONYMS rather than reach for a model.
+FUZZY_THRESHOLD = 0.60
 FUZZY_MARGIN = 0.10          # keep runners-up within this of the top score
 FUZZY_MAX = 3                # never propose more than this many soft guesses
 
@@ -50,13 +52,47 @@ using used buy need needs want wants add install put set help
 
 _WORD = re.compile(r"[a-z0-9]+")
 
+# Slang / synonym -> a canonical domain word that appears in the EXAMPLES. This
+# is the cheap "semantics" layer: difflib canonicalization only catches spelling
+# variants (close letters), so genuinely different words for the same idea
+# ("snail"->turbo, "pep"->power) need this map. Applied to BOTH the example
+# vocabulary and the query, so the two sides always canonicalize the same way.
+SYNONYMS = {
+    # down-on-power slang
+    "pep": "power", "grunt": "power", "guts": "power", "gutless": "power",
+    "oomph": "power", "gusto": "power", "get-up": "power", "giddyup": "power",
+    # forced induction slang -> the token boost_issue examples carry
+    "snail": "turbo", "huffer": "turbo", "blower": "turbo", "boosted": "boost",
+    # fuel
+    "gas": "fuel", "gasoline": "fuel", "petrol": "fuel", "economy": "mileage",
+    "milage": "mileage",
+    # rpm / driveline
+    "revs": "rpm", "rev": "rpm", "tach": "rpm",
+    "tranny": "transmission", "gearbox": "transmission", "trans": "transmission",
+    "slushbox": "transmission", "converter": "lockup",
+    # idle quality
+    "lopey": "lumpy", "lope": "lumpy", "lopy": "lumpy", "choppy": "rough",
+    "loping": "lumpy",
+    # knock
+    "pinging": "knock", "ping": "knock", "pinking": "knock", "pings": "knock",
+    "detonation": "knock", "detonating": "knock", "detonate": "knock",
+    # other symptom slang
+    "hiccup": "stumble", "hiccups": "stumble", "stumbles": "stumble",
+    "sputtering": "misfire", "sputters": "misfire", "surges": "surge",
+    "overheating": "overheat", "boiling": "overheat", "cooking": "overheat",
+    "cel": "code", "mil": "code", "dtc": "code", "dtcs": "code", "codes": "code",
+    "floods": "flood", "flooded": "flood", "flooding": "flood",
+}
+
 
 def _tokens(text: str) -> list[str]:
     """Normalize -> informative tokens. Lowercase, collapse emphatic repeats
     (reusing the regex layer's rule so "rouuugh"->"rough"), drop apostrophes so
-    "won't"->"wont", split on non-alphanumerics, drop stopwords and 1-char noise."""
+    "won't"->"wont", split on non-alphanumerics, drop stopwords and 1-char noise,
+    then map slang/synonyms onto their canonical domain word."""
     t = symptoms._REPEAT.sub(r"\1", text.lower()).replace("'", "")
-    return [w for w in _WORD.findall(t) if w not in _STOP and len(w) > 1]
+    return [SYNONYMS.get(w, w) for w in _WORD.findall(t)
+            if w not in _STOP and len(w) > 1]
 
 
 class _FuzzyBackend:

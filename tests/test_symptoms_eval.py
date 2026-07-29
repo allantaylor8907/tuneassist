@@ -133,9 +133,21 @@ def test_fuzzy_fallback_lifts_recall_without_false_positives():
     # the fallback roughly doubles recall on held-out phrasings the regex misses
     assert pf > pr + 0.2, f"insufficient lift: regex {pr:.2f} vs full {pf:.2f}"
     assert pf >= 0.82, f"regex+fuzzy recall too low: {pf:.2f}"
+    # the synonym layer + expanded EXAMPLES pull real semantic paraphrases in
+    # (this used to be 0.00) -- lock the gain in so a regression can't erase it
+    assert m["hard_full"][0] >= 0.30, f"hard-paraphrase recall regressed: {m['hard_full'][0]:.2f}"
     # ...while staying quiet on unrelated text (a soft fuzzy hit shows as a
     # low-confidence "did you mean", so we allow at most one residual)
     assert len(m["false_pos"]) <= 1, f"too many false positives: {m['false_pos']}"
+
+
+def test_eval_phrases_are_held_out():
+    # never train on the test set: no eval phrase may appear verbatim in EXAMPLES
+    from tuneassist.symptom_examples import EXAMPLES
+    pool = {p.lower().strip() for phrases in EXAMPLES.values() for p in phrases}
+    leaked = [t for t, _ in (EVAL_POS + EVAL_HARD) if t.lower().strip() in pool]
+    leaked += [t for t in EVAL_NEG if t.lower().strip() in pool]
+    assert not leaked, f"eval phrases leaked into EXAMPLES: {leaked}"
 
 
 def test_every_symptom_has_examples():

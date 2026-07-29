@@ -107,10 +107,13 @@ tunable state.
   ('pattern'|'fuzzy'|'model') + `score`, so the GUI shows a regex hit as a
   confident "Heard you" and a fallback hit as a dashed "did you mean X 87%?"
   card. The shipped backend `_FuzzyBackend` is STDLIB-only (difflib +
-  IDF-weighted keyword recall over `symptom_examples.EXAMPLES`, ~208 labeled
-  phrasings across the 26 symptoms) -- no deps, no model, no network; it
-  absorbs misspellings and word-order and roughly doubles held-out recall
-  (~0.54 regex-only -> ~0.87) at ~1 soft false positive. `set_backend()` lets a
+  IDF-weighted keyword recall + a slang->canonical SYNONYMS map, over
+  `symptom_examples.EXAMPLES` = ~364 labeled phrasings across the 26 symptoms)
+  -- no deps, no model, no network; it absorbs misspellings, word-order, and
+  slang (snail->turbo, pep->power) and roughly doubles held-out recall (~0.54
+  regex-only -> ~0.87) AND lifts hard semantic paraphrases 0.00 -> ~0.43 --
+  which BEAT a benchmarked general ONNX MiniLM (0.85/0.29) for free, at ~1 soft
+  false positive. `set_backend()` lets a
   Phase-2 offline ONNX embedding model slot in behind the SAME interface (the
   eval harness `tests/test_symptoms_eval.py` is the yardstick it must beat);
   no backend -> regex-only, never an error. A closed label set means a fallback
